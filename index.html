@@ -1,0 +1,1726 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#060a11">
+<meta name="description" content="Control por Bluetooth (BLE) de las salidas 0-10 V, 0.5-4.5 V y 0-5 V de una ESP32 para pruebas con PLC.">
+<title>PLC Signal Lab · ESP32</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1220'/%3E%3Cpath d='M10 40 L22 40 L28 18 L36 46 L42 30 L54 30' fill='none' stroke='%2322d3ee' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#060a11; --panel:#0c1420; --panel2:#101a29; --line:#1a2638; --line2:#25354b;
+  --text:#e8eef7; --muted:#8696ab; --dim:#56667b;
+  --c1:#22d3ee; --c2:#fbbf24; --c3:#4ade80; --ble:#60a5fa; --bad:#f43f5e; --ok:#34d399; --warn:#fbbf24;
+  --r:18px;
+  --mono:'JetBrains Mono',ui-monospace,Consolas,monospace;
+  --ui:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --disp:'Rajdhani','Inter',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--ui);-webkit-tap-highlight-color:transparent}
+body{min-height:100vh;overflow-x:clip;
+  background:
+    radial-gradient(1100px 600px at 15% -10%,rgba(34,211,238,.10),transparent 60%),
+    radial-gradient(900px 520px at 105% 5%,rgba(124,58,237,.10),transparent 60%),
+    radial-gradient(800px 600px at 50% 110%,rgba(74,222,128,.05),transparent 60%),
+    var(--bg)}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+[hidden]{display:none!important}
+
+/* ---------- barra superior ---------- */
+.topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 16px;padding-top:max(10px,env(safe-area-inset-top));
+  background:rgba(6,10,17,.74);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.logo{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex:none;
+  background:linear-gradient(135deg,#0891b2,#6d28d9);box-shadow:0 0 26px rgba(34,211,238,.35),inset 0 0 0 1px rgba(255,255,255,.15)}
+.logo svg{width:24px;height:24px}
+.logo path{stroke-dasharray:80;stroke-dashoffset:80;animation:draw 2.4s .2s ease forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.brand h1{font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:.05em;margin:0;line-height:1;white-space:nowrap}
+.brand small{display:block;color:var(--muted);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;margin-top:4px}
+.spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 13px;border-radius:999px;border:1px solid var(--line2);
+  font-size:12.5px;font-weight:600;color:var(--muted);background:var(--panel);transition:color .3s,border-color .3s}
+.pill i{width:9px;height:9px;border-radius:50%;background:#64748b;flex:none}
+.pill[data-s=connected]{color:#a7f3d0;border-color:rgba(52,211,153,.4)}
+.pill[data-s=connected] i{background:var(--ok);animation:ping 1.8s infinite}
+.pill[data-s=demo]{color:#ddd6fe;border-color:rgba(167,139,250,.45)}
+.pill[data-s=demo] i{background:#a78bfa;animation:ping 1.8s infinite}
+.pill[data-s=connecting] i,.pill[data-s=reconnecting] i{background:var(--warn);animation:blink .6s infinite alternate}
+.pill[data-s=reconnecting],.pill[data-s=lost]{color:#fde68a;border-color:rgba(251,191,36,.45)}
+.pill[data-s=lost] i{background:var(--bad)}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(52,211,153,.6)}80%,100%{box-shadow:0 0 0 9px rgba(52,211,153,0)}}
+@keyframes blink{from{opacity:.25}to{opacity:1}}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 15px;border-radius:12px;
+  border:1px solid var(--line2);background:var(--panel2);color:var(--text);font-weight:600;font-size:14px;white-space:nowrap;
+  transition:transform .12s,background .2s,border-color .2s,box-shadow .25s,opacity .2s}
+.btn:hover{border-color:#3b5476}
+.btn:active{transform:scale(.96)}
+.btn svg{width:18px;height:18px;flex:none}
+.btn.primary{background:linear-gradient(135deg,#2563eb,#7c3aed);border-color:transparent;box-shadow:0 8px 26px -8px rgba(99,102,241,.75)}
+.btn.primary.on{background:linear-gradient(135deg,#0f766e,#155e75);box-shadow:0 8px 26px -10px rgba(45,212,191,.6)}
+.btn.sm{height:34px;padding:0 12px;font-size:13px;border-radius:10px}
+.btn.ghost{background:transparent}
+.btn.warnb{border-color:rgba(244,63,94,.45);color:#fecdd3}
+.btn:disabled{opacity:.45;pointer-events:none}
+
+/* ---------- aviso de desconexión y toasts ---------- */
+.banner{position:fixed;left:50%;top:74px;z-index:35;width:min(700px,calc(100% - 24px));display:flex;gap:12px;align-items:center;
+  padding:12px 14px;border-radius:14px;background:rgba(36,22,6,.93);border:1px solid rgba(251,191,36,.5);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 24px 50px -12px rgba(0,0,0,.7);
+  transform:translate(-50%,-160%);transition:transform .5s cubic-bezier(.2,.9,.2,1),visibility 0s .5s;font-size:14px;line-height:1.4;visibility:hidden;pointer-events:none}
+.banner.show{transform:translate(-50%,0);visibility:visible;pointer-events:auto;transition:transform .5s cubic-bezier(.2,.9,.2,1),visibility 0s}
+.banner .b-msg{flex:1}
+.banner b{color:#fde68a}
+.spin{width:20px;height:20px;border-radius:50%;border:3px solid rgba(251,191,36,.25);border-top-color:#fbbf24;animation:rot .8s linear infinite;flex:none}
+@keyframes rot{to{transform:rotate(360deg)}}
+.toasts{position:fixed;left:14px;bottom:max(18px,env(safe-area-inset-bottom));z-index:50;display:grid;gap:8px;width:min(400px,calc(100% - 140px));pointer-events:none}
+.toast{padding:11px 14px;border-radius:12px;background:rgba(15,23,36,.96);border:1px solid var(--line2);font-size:13.5px;
+  box-shadow:0 14px 30px -10px rgba(0,0,0,.7);animation:tin .35s cubic-bezier(.2,.9,.2,1);border-left:4px solid var(--ble)}
+.toast.ok{border-left-color:var(--ok)} .toast.warn{border-left-color:var(--warn)} .toast.bad{border-left-color:var(--bad)}
+.toast.out{animation:tout .3s forwards}
+@keyframes tin{from{opacity:0;transform:translateY(14px) scale(.97)}}
+@keyframes tout{to{opacity:0;transform:translateY(8px)}}
+
+/* ---------- distribución ---------- */
+.layout{max-width:1460px;margin:0 auto;padding:14px 14px 150px;display:grid;gap:14px}
+@media (min-width:1040px){
+  .layout{grid-template-columns:minmax(0,1.12fr) minmax(400px,.88fr);align-items:start;padding:18px 20px 150px}
+}
+.controls{display:grid;gap:14px;min-width:0}
+#cards{display:grid;gap:14px}
+
+/* ---------- escenario 3D ---------- */
+.stage{position:relative;height:min(50vh,470px);min-height:320px;border-radius:22px;overflow:hidden;border:1px solid var(--line);
+  background:radial-gradient(120% 90% at 50% 15%,#0f1b2e 0%,#080d16 55%,#05080e 100%);animation:fadein 1s ease both}
+.stage::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 3px);mix-blend-mode:overlay}
+#scene{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#scene.grabbing{cursor:grabbing}
+#scene.pointer{cursor:pointer}
+.corner{position:absolute;width:22px;height:22px;border:2px solid rgba(96,165,250,.45);pointer-events:none}
+.corner.tl{top:10px;left:10px;border-right:0;border-bottom:0;border-radius:8px 0 0 0}
+.corner.tr{top:10px;right:10px;border-left:0;border-bottom:0;border-radius:0 8px 0 0}
+.corner.bl{bottom:10px;left:10px;border-right:0;border-top:0;border-radius:0 0 0 8px}
+.corner.br{bottom:10px;right:10px;border-left:0;border-top:0;border-radius:0 0 8px 0}
+.hud{position:absolute;left:16px;top:16px;display:flex;flex-wrap:wrap;gap:6px;max-width:calc(100% - 32px);pointer-events:none}
+.hud-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font:600 11.5px var(--mono);
+  color:#b8c6d8;background:rgba(8,13,22,.7);border:1px solid rgba(96,165,250,.22);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.hud-chip b{color:#e2e8f0}
+.hud-chip .dot{width:7px;height:7px;border-radius:50%;background:#64748b}
+body[data-mode=connected] .hud-chip .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+body[data-mode=demo] .hud-chip .dot{background:#a78bfa;box-shadow:0 0 8px #a78bfa}
+.stage-title{position:absolute;right:18px;bottom:16px;text-align:right;pointer-events:none;font-family:var(--disp)}
+.stage-title b{display:block;font-size:26px;letter-spacing:.12em;color:rgba(226,232,240,.85);line-height:1}
+.stage-title span{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
+.hint{position:absolute;left:16px;bottom:16px;font-size:12px;color:#93a4bb;padding:6px 11px;border-radius:999px;
+  background:rgba(8,13,22,.66);border:1px solid var(--line);pointer-events:none;transition:opacity .6s}
+.hint.gone{opacity:0}
+.fallback{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:30px;color:var(--muted);font-size:14px}
+.stage.no3d .fallback{display:grid}
+.stage.no3d .hint{display:none}
+@keyframes fadein{from{opacity:0}}
+@media (min-width:1040px){.stage{position:sticky;top:76px;height:calc(100vh - 96px);min-height:520px}}
+
+/* ---------- tarjetas ---------- */
+.card{position:relative;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:var(--r);
+  padding:16px;overflow:hidden;animation:rise .7s cubic-bezier(.2,.8,.2,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(22px)}}
+.sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:12px}
+.sec-head h2{margin:0;font:700 19px var(--disp);letter-spacing:.05em;text-transform:uppercase}
+.sec-head .sub{color:var(--muted);font-size:12px}
+.notice{border-color:rgba(251,191,36,.45);background:linear-gradient(180deg,rgba(60,40,8,.5),var(--panel))}
+.notice p{margin:6px 0 0;color:#e7dcc2;font-size:14px;line-height:1.5}
+
+/* canal */
+.ch{--c:var(--c1);--cg:rgba(34,211,238,.35);transition:box-shadow .35s,border-color .35s}
+.ch::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,transparent,var(--c),transparent)}
+.ch::after{content:"";position:absolute;right:-60px;top:-60px;width:180px;height:180px;border-radius:50%;background:radial-gradient(var(--cg),transparent 70%);opacity:.5;pointer-events:none}
+.ch.sel{border-color:var(--c);box-shadow:0 0 0 1px var(--c),0 18px 50px -18px var(--cg)}
+.ch.flash{animation:flash .8s}
+@keyframes flash{30%{box-shadow:0 0 0 2px var(--c),0 0 60px var(--cg)}}
+.ch-head{display:flex;align-items:center;gap:12px;position:relative;z-index:1}
+.ch-tag{font:700 13px var(--mono);color:#081018;background:var(--c);padding:5px 8px;border-radius:8px;box-shadow:0 0 16px var(--cg)}
+.ch-title{flex:1;min-width:0}
+.ch-title b{display:block;font:700 22px var(--disp);letter-spacing:.04em;line-height:1.05}
+.ch-title span{display:block;color:var(--muted);font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;position:relative}
+.switch input{position:absolute;opacity:0;width:1px;height:1px}
+.switch .track{width:52px;height:29px;border-radius:99px;background:#18222f;border:1px solid var(--line2);position:relative;transition:background .25s,border-color .25s}
+.switch .knob{position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:#5b6b80;transition:left .3s cubic-bezier(.3,1.5,.5,1),background .25s,box-shadow .25s}
+.switch input:checked + .track{background:var(--cg);border-color:var(--c)}
+.switch input:checked + .track .knob{left:26px;background:var(--c);box-shadow:0 0 14px var(--c)}
+.switch input:focus-visible + .track{outline:2px solid var(--c);outline-offset:2px}
+.sw-txt{font:700 12px var(--mono);color:var(--muted);min-width:26px}
+
+.ch-body{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;align-items:center;margin-top:12px;position:relative;z-index:1}
+@media (max-width:380px){.ch-body{grid-template-columns:118px minmax(0,1fr)}}
+.gauge{width:100%;display:block;transition:opacity .3s}
+.g-bg{fill:none;stroke:#172233;stroke-width:12;stroke-linecap:round}
+.g-fill{fill:none;stroke:var(--c);stroke-width:12;stroke-linecap:round;filter:drop-shadow(0 0 5px var(--c));transition:stroke-dasharray .35s cubic-bezier(.2,.8,.2,1)}
+.g-zone{fill:none;stroke-width:4}
+.g-zone.okz{stroke:rgba(52,211,153,.55)} .g-zone.badz{stroke:rgba(244,63,94,.7)}
+.tick{stroke:#2c3d55;stroke-width:2}
+.tick.maj{stroke:#587092;stroke-width:3}
+.tl{fill:#71829a;font:600 10.5px var(--mono);text-anchor:middle}
+.needle line{stroke:#f8fafc;stroke-width:3;stroke-linecap:round}
+.needle circle{fill:#0b1220;stroke:var(--c);stroke-width:3}
+.g-val{fill:var(--text);font:700 17px var(--mono);text-anchor:middle}
+.g-lbl{fill:var(--muted);font:600 8.5px var(--ui);letter-spacing:.16em;text-anchor:middle}
+
+.readout{min-width:0}
+.readout .lbl{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.value{display:inline-flex;align-items:baseline;gap:6px;background:none;border:1px dashed transparent;border-radius:12px;padding:2px 10px 2px 2px;margin-left:-2px;color:var(--c);transition:border-color .2s,background .2s}
+.value:hover,.value:focus-visible{border-color:var(--line2);background:rgba(255,255,255,.02);outline:none}
+.num{display:inline-block;font:700 clamp(38px,10vw,52px)/1.05 var(--mono);letter-spacing:-.03em;text-shadow:0 0 24px var(--cg)}
+.bump .num{animation:bump .45s cubic-bezier(.3,1.6,.5,1)}
+@keyframes bump{40%{transform:scale(1.09)}}
+.unit{font:700 20px var(--disp);color:var(--muted)}
+.value svg{width:15px;height:15px;color:var(--dim);align-self:center}
+.edit{display:flex;gap:8px;align-items:center;margin:4px 0 2px}
+.edit input{width:100%;min-width:0;height:52px;padding:0 12px;border-radius:12px;border:2px solid var(--c);background:#070c15;
+  font:700 30px var(--mono);color:var(--text);outline:none;box-shadow:0 0 0 4px var(--cg)}
+.edit .btn{height:52px}
+.shake{animation:shake .4s}
+@keyframes shake{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+.meta{font-size:12.5px;color:var(--muted);margin-top:4px}
+.meta b{color:#cbd5e1;font-family:var(--mono);font-weight:600}
+.state{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;font:700 11px var(--mono);letter-spacing:.05em;
+  border:1px solid var(--line2);color:#a9b8cc;background:rgba(255,255,255,.02)}
+.badge.okb{color:#a7f3d0;border-color:rgba(52,211,153,.45);background:rgba(52,211,153,.08)}
+.badge.badb{color:#fecdd3;border-color:rgba(244,63,94,.6);background:rgba(244,63,94,.12);animation:blink .5s infinite alternate}
+.badge.offb{color:#fde68a;border-color:rgba(251,191,36,.45)}
+.ch.off .gauge,.ch.off .num{opacity:.4}
+
+.slider-row{display:flex;align-items:center;gap:10px;margin-top:14px;position:relative;z-index:1}
+.step{width:42px;height:42px;flex:none;border-radius:12px;border:1px solid var(--line2);background:var(--panel2);font:700 22px var(--mono);
+  display:grid;place-items:center;color:var(--c);touch-action:manipulation;transition:transform .1s,border-color .2s}
+.step:active{transform:scale(.9);border-color:var(--c)}
+.slider{-webkit-appearance:none;appearance:none;width:100%;height:36px;background:transparent;--p:0%;margin:0}
+.slider:focus{outline:none}
+.slider::-webkit-slider-runnable-track{height:10px;border-radius:99px;background:linear-gradient(90deg,var(--c) 0 var(--p),#17212f var(--p) 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;width:28px;height:28px;margin-top:-9px;border-radius:50%;background:#0a111c;border:3px solid var(--c);box-shadow:0 0 0 6px var(--cg),0 4px 12px rgba(0,0,0,.6);transition:transform .15s}
+.slider:active::-webkit-slider-thumb{transform:scale(1.15)}
+.slider::-moz-range-track{height:10px;border-radius:99px;background:#17212f}
+.slider::-moz-range-progress{height:10px;border-radius:99px;background:var(--c)}
+.slider::-moz-range-thumb{width:24px;height:24px;border-radius:50%;background:#0a111c;border:3px solid var(--c);box-shadow:0 0 0 6px var(--cg)}
+.scale{display:flex;justify-content:space-between;font:600 11px var(--mono);color:var(--dim);padding:0 52px;margin-top:-2px}
+.chips{display:flex;gap:7px;margin-top:12px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none;position:relative;z-index:1}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.02);
+  font:600 12.5px var(--mono);color:#b6c3d4;transition:all .2s}
+.chip:hover{border-color:var(--c);color:var(--c)}
+.chip.on{background:var(--c);color:#081018;border-color:var(--c);box-shadow:0 0 14px var(--cg)}
+.faults{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line2);position:relative;z-index:1}
+.faults>span{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-right:4px}
+.fbtn{height:32px;padding:0 11px;border-radius:10px;border:1px solid rgba(244,63,94,.45);background:rgba(244,63,94,.06);color:#fecdd3;font-size:12.5px;font-weight:600;transition:all .2s}
+.fbtn.okf{border-color:rgba(52,211,153,.45);background:rgba(52,211,153,.06);color:#a7f3d0}
+.fbtn.on{background:#e11d48;color:#fff;border-color:#e11d48;box-shadow:0 0 16px rgba(244,63,94,.5)}
+.fbtn.okf.on{background:#059669;border-color:#059669;box-shadow:0 0 16px rgba(52,211,153,.4)}
+
+/* ajustes */
+.set-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.set-row:first-of-type{border-top:0;padding-top:2px}
+.set-row b{display:block;font-size:14px}
+.set-row small{display:block;color:var(--muted);font-size:12px;margin-top:2px;line-height:1.4}
+.seg{display:inline-flex;padding:3px;border-radius:12px;background:#0a111b;border:1px solid var(--line2);gap:3px;flex-wrap:wrap;justify-content:flex-end}
+.seg button{height:32px;padding:0 11px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:12.5px;font-weight:600;transition:all .2s}
+.seg button.on{background:linear-gradient(135deg,#1d4ed8,#6d28d9);color:#fff;box-shadow:0 4px 14px -4px rgba(99,102,241,.7)}
+.set-switch{--c:var(--ble);--cg:rgba(96,165,250,.3)}
+.demo-only{display:none}
+body[data-mode=demo] .demo-only{display:flex}
+@media (max-width:520px){.set-row{flex-direction:column;align-items:flex-start}.seg{justify-content:flex-start}}
+
+/* calibración */
+.tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.tab{--c:var(--c1);height:34px;padding:0 13px;border-radius:10px;border:1px solid var(--line2);background:transparent;color:var(--muted);font:600 13px var(--mono);transition:all .2s}
+.tab.on{color:#081018;background:var(--c);border-color:var(--c);box-shadow:0 0 16px -2px var(--c)}
+.cal-info{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+@media (max-width:520px){.cal-info{grid-template-columns:1fr}}
+.box{padding:11px 12px;border-radius:12px;background:#0a111b;border:1px solid var(--line)}
+.box small{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.box b{font:600 13.5px var(--mono)}
+.inrow{display:flex;gap:8px}
+.inrow input,.r-input input{flex:1;min-width:0;height:36px;padding:0 10px;border-radius:10px;border:1px solid var(--line2);background:#060b13;font:600 15px var(--mono);outline:none}
+.inrow input:focus,.r-input input:focus{border-color:var(--ble);box-shadow:0 0 0 3px rgba(96,165,250,.2)}
+.cal-actions{display:flex;flex-wrap:wrap;gap:8px}
+.runner{margin-top:12px;padding:14px;border-radius:14px;border:1px solid rgba(96,165,250,.4);background:linear-gradient(180deg,rgba(29,78,216,.12),rgba(10,17,27,.6));animation:rise .4s both}
+.r-top{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);letter-spacing:.06em}
+.r-main{display:flex;align-items:center;gap:14px;margin:10px 0 12px}
+.ring{width:58px;height:58px;flex:none}
+.ring circle{fill:none;stroke-width:4}
+.r-bg{stroke:#1a2738}
+.r-fg{stroke:var(--ble);stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:0;transform:rotate(-90deg);transform-origin:50% 50%}
+.ring text{fill:var(--text);font:700 16px var(--mono);text-anchor:middle}
+.r-ped{font-size:13px;color:var(--muted)}
+.r-ped b{display:block;font:700 30px var(--mono);color:var(--text)}
+.r-hint{font-size:13px;color:#93c5fd;margin-top:2px}
+.r-input{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.r-input span{color:var(--muted);font-weight:600}
+.fitbox{margin-top:12px;padding:14px;border-radius:14px;border:1px solid rgba(52,211,153,.4);background:rgba(6,78,59,.18);font-size:13.5px;line-height:1.55;animation:rise .4s both}
+.fitbox b{font-family:var(--mono)}
+.tablewrap{margin-top:12px;border:1px solid var(--line);border-radius:12px;overflow:auto;max-height:290px;background:#080e17}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{position:sticky;top:0;background:#0d1622;color:var(--muted);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+td{font-family:var(--mono)}
+.ph{display:inline-block;padding:2px 7px;border-radius:6px;font:700 10px var(--ui);letter-spacing:.06em;text-transform:uppercase}
+.ph.a{background:rgba(251,191,36,.14);color:#fde68a}
+.ph.d{background:rgba(52,211,153,.14);color:#a7f3d0}
+.e-ok{color:#86efac} .e-mid{color:#fde68a} .e-bad{color:#fda4af}
+.empty td{text-align:center!important;color:var(--dim);font-family:var(--ui);padding:18px}
+.cal-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+.cal-foot span{color:var(--muted);font-size:12px;margin-left:auto}
+
+/* consola y guía */
+.log{height:180px;overflow:auto;font:12px/1.55 var(--mono);background:#050911;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.log div{white-space:pre-wrap;word-break:break-all;animation:fadein .3s}
+.log .t{color:var(--dim)}
+.log .tx{color:#67e8f9} .log .rx{color:#86efac} .log .sys{color:#94a3b8} .log .err{color:#fda4af}
+.guide ol{margin:0;padding-left:20px;color:#c9d4e3;font-size:14px;line-height:1.6}
+.guide li{margin:4px 0}
+.guide code{font:600 12.5px var(--mono);background:#0a111b;border:1px solid var(--line);padding:1px 6px;border-radius:6px}
+.foot{color:var(--dim);font-size:12px;text-align:center;margin-top:6px}
+
+/* paro */
+.estop{position:fixed;right:18px;bottom:max(20px,env(safe-area-inset-bottom));z-index:40;width:88px;height:88px;border-radius:50%;border:0;
+  background:radial-gradient(circle at 34% 28%,#ff8a8a 0%,#ef4444 30%,#b91c1c 62%,#7f1d1d 100%);color:#fff;
+  font:700 17px var(--disp);letter-spacing:.1em;text-shadow:0 2px 4px rgba(0,0,0,.5);
+  box-shadow:0 0 0 7px #facc15,0 0 0 10px #18181b,0 16px 34px rgba(0,0,0,.7),0 0 44px rgba(239,68,68,.5);
+  transition:transform .12s;animation:pulse-stop 2.6s infinite}
+.estop:active{transform:scale(.9)}
+.estop::after{content:"";position:absolute;inset:-12px;border-radius:50%;border:3px solid #f87171;opacity:0}
+.estop.hit::after{animation:ripple .7s ease-out}
+@keyframes ripple{from{opacity:.9;transform:scale(.85)}to{opacity:0;transform:scale(1.7)}}
+@keyframes pulse-stop{50%{box-shadow:0 0 0 7px #facc15,0 0 0 10px #18181b,0 16px 34px rgba(0,0,0,.7),0 0 70px rgba(239,68,68,.75)}}
+
+@media (max-width:560px){
+  .brand small{display:none}
+  .topbar{padding-left:12px;padding-right:12px}
+  .btn{padding:0 12px}
+  .pill{order:5;width:100%;justify-content:center}
+  .banner{top:118px}
+}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body data-mode="idle">
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M2 15h5l2.5-9 4 13 2.5-7H22" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div><h1>PLC SIGNAL LAB</h1><small>ESP32 · BLE · LM324</small></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="pill" id="pill" data-s="idle"><i></i><span id="pillTxt">Sin conexión</span></div>
+  <button class="btn ghost" id="btnDemo" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z" stroke-linejoin="round"/></svg><span>Demo</span></button>
+  <button class="btn primary" id="btnConn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10-5 5V2l5 5L7 17"/></svg><span>Conectar</span></button>
+</header>
+
+<div class="banner" id="banner" role="status" aria-live="polite">
+  <div class="spin" id="bannerSpin"></div>
+  <div class="b-msg" id="bannerMsg"></div>
+  <button class="btn sm" id="bannerBtn" type="button">Reconectar</button>
+</div>
+
+<main class="layout">
+  <section class="stage" id="stage" aria-label="Modelo 3D del módulo">
+    <canvas id="scene"></canvas>
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="hud">
+      <div class="hud-chip"><i class="dot"></i><span id="hudDev">Sin dispositivo</span></div>
+      <div class="hud-chip">FW <b id="hudFw">—</b></div>
+      <div class="hud-chip" id="hudSafe">Al desconectar: seguro · 5 s</div>
+    </div>
+    <div class="stage-title"><b>AO-3</b><span>Módulo de salidas analógicas</span></div>
+    <div class="hint" id="hint">Arrastra para girar · pellizca para acercar · toca una borna</div>
+    <div class="fallback">La vista 3D no está disponible en este navegador.<br>Los controles funcionan igual.</div>
+  </section>
+
+  <section class="controls">
+    <div class="card notice" id="support" hidden>
+      <div class="sec-head"><h2>Bluetooth no disponible</h2></div>
+      <p id="supportMsg"></p>
+    </div>
+
+    <div id="cards"></div>
+
+    <section class="card" id="setCard">
+      <div class="sec-head"><h2>Seguridad</h2><span class="sub">Se guarda en la ESP32</span></div>
+      <div class="set-row">
+        <div><b>Al desconectarse el dispositivo</b><small>Estado seguro: J1 0 V · J2 0.5 V · J3 0 V</small></div>
+        <div class="seg" id="segMode"><button type="button" data-m="0">Estado seguro</button><button type="button" data-m="1">Mantener valor</button></div>
+      </div>
+      <div class="set-row">
+        <div><b>Espera antes del estado seguro</b><small>Margen para reconectar si fue un corte breve</small></div>
+        <div class="seg" id="segDelay"></div>
+      </div>
+      <div class="set-row">
+        <div><b>Mantener la pantalla encendida</b><small>Evita que Android corte el Bluetooth en pruebas largas</small></div>
+        <label class="switch set-switch"><input type="checkbox" id="wakeSw"><span class="track"><span class="knob"></span></span></label>
+      </div>
+      <div class="set-row demo-only">
+        <div><b>Probar pérdida de conexión</b><small>Simula que el celular se desconecta (solo demo)</small></div>
+        <button class="btn sm" id="simDrop" type="button">Simular</button>
+      </div>
+    </section>
+
+    <section class="card" id="calCard">
+      <div class="sec-head"><h2>Calibración</h2><span class="sub">Pedido vs. medido · multímetro en DC</span></div>
+      <div class="tabs" id="calTabs"></div>
+      <div class="cal-info">
+        <div class="box"><small>Corrección actual</small><b id="calAB">a = 1.00000 · b = 0.0000 V</b></div>
+        <div class="box"><small>VMAX (V con duty 100 %)</small>
+          <div class="inrow"><input id="vmaxIn" type="text" inputmode="decimal" autocomplete="off"><button class="btn sm" id="vmaxSave" type="button">Guardar</button></div>
+        </div>
+      </div>
+      <div class="cal-actions">
+        <button class="btn sm" id="calRaw" type="button">1 · Medir para calibrar</button>
+        <button class="btn sm" id="calVer" type="button">2 · Verificar</button>
+        <button class="btn sm ghost warnb" id="calReset" type="button">Restaurar originales</button>
+      </div>
+
+      <div class="runner" id="runner" hidden>
+        <div class="r-top"><span id="rPhase"></span><span id="rStep"></span></div>
+        <div class="r-main">
+          <svg class="ring" viewBox="0 0 44 44"><circle class="r-bg" cx="22" cy="22" r="19"/><circle class="r-fg" id="rRing" cx="22" cy="22" r="19" pathLength="100"/><text x="22" y="27.5" id="rCount">3</text></svg>
+          <div><div class="r-ped">Pedido<b id="rPed">0.00 V</b></div><div class="r-hint" id="rHint"></div></div>
+        </div>
+        <div class="r-input">
+          <input id="rMeas" type="text" inputmode="decimal" autocomplete="off" placeholder="Lectura del multímetro" enterkeyhint="done"><span>V</span>
+          <button class="btn sm primary" id="rOk" type="button">Registrar</button>
+          <button class="btn sm" id="rSkip" type="button">Saltar</button>
+          <button class="btn sm ghost warnb" id="rCancel" type="button">Cancelar</button>
+        </div>
+      </div>
+
+      <div class="fitbox" id="fitbox" hidden></div>
+
+      <div class="tablewrap"><table>
+        <thead><tr><th>Hora</th><th>Fase</th><th>Pedido</th><th>Medido</th><th>Error</th><th>% FS</th></tr></thead>
+        <tbody id="calBody"></tbody>
+      </table></div>
+      <div class="cal-foot">
+        <button class="btn sm" id="csvBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"/></svg>Exportar CSV</button>
+        <button class="btn sm ghost" id="clearBtn" type="button">Borrar tabla</button>
+        <span id="rowCount"></span>
+      </div>
+    </section>
+
+    <section class="card" id="logCard">
+      <div class="sec-head"><h2>Consola BLE</h2><span class="sub">→ enviado · ← recibido</span></div>
+      <div class="log" id="log"></div>
+    </section>
+
+    <section class="card guide">
+      <div class="sec-head"><h2>Guía rápida</h2></div>
+      <ol>
+        <li>Corre <code>plc_ble.py</code> en la ESP32 (aparece como <code>ESP32-PLC</code>).</li>
+        <li>Toca <b>Conectar</b> y elige <code>ESP32-PLC</code> en la lista de Chrome.</li>
+        <li>Mueve el deslizador, usa los atajos o toca el número para escribir el voltaje.</li>
+        <li>El valor se queda fijo hasta que lo cambies. <b>PARO</b> pone J1 0 V · J2 0.5 V · J3 0 V.</li>
+        <li>El número es el voltaje <b>pedido</b>. Compruébalo con el multímetro y calibra si hace falta.</li>
+      </ol>
+      <p class="foot">PWM 5 kHz → filtro RC → LM324 · Web Bluetooth (Chrome / Edge)</p>
+    </section>
+  </section>
+</main>
+
+<button class="estop" id="estop" type="button" aria-label="Paro: llevar todas las salidas a estado seguro">PARO</button>
+<div class="toasts" id="toasts"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   Utilidades
+   ===================================================================== */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const now = () => performance.now();
+const fmt = (v, d = 2) => (Math.round(v * 10 ** d) / 10 ** d).toFixed(d);
+const parseNum = s => {
+  const t = String(s).trim().replace(',', '.').replace(/\s*v$/i, '');
+  return /^[-+]?(\d+\.?\d*|\.\d+)$/.test(t) ? parseFloat(t) : NaN;
+};
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('plcsl:' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('plcsl:' + k, JSON.stringify(v)); } catch (e) {} }
+};
+
+/* =====================================================================
+   Configuración de canales y protocolo
+   ===================================================================== */
+const NUS = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const RX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';   // la app escribe aquí
+const TX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';   // la ESP32 notifica aquí
+const PREFIJO = 'ESP32-PLC';
+const TAU = 0.12;            // s, respuesta aproximada del filtro RC (10 kΩ · 10 µF)
+const DELAYS = [0, 2, 5, 10, 30];
+
+const CH = [
+  { id: 1, name: '0 – 10 V', j: 'J1', gpio: 25, pin: 'pin 1', min: 0, max: 10, safe: 0, gmax: 10,
+    color: '#22d3ee', glow: 'rgba(34,211,238,.36)', presets: [0, 2.5, 5, 7.5, 10], cal: [0, 2.5, 5, 7.5, 10], vmaxDef: 10.29 },
+  { id: 2, name: '0.5 – 4.5 V', j: 'J2', gpio: 26, pin: 'pin 7', min: 0.5, max: 4.5, safe: 0.5, gmax: 5,
+    color: '#fbbf24', glow: 'rgba(251,191,36,.34)', presets: [0.5, 1.5, 2.5, 3.5, 4.5], cal: [0.5, 1.5, 2.5, 3.5, 4.5], vmaxDef: 4.88, faults: true },
+  { id: 3, name: '0 – 5 V', j: 'J3', gpio: 27, pin: 'pin 14', min: 0, max: 5, safe: 0, gmax: 5,
+    color: '#4ade80', glow: 'rgba(74,222,128,.32)', presets: [0, 1, 2, 3, 4, 5], cal: [0, 1, 2, 3, 4, 5], vmaxDef: 5.21 },
+];
+
+const S = {
+  mode: 'idle',              // idle | connecting | connected | reconnecting | lost | demo
+  discMode: 0, delay: 5, fw: '—', sel: 0,
+  wake: store.get('wake', true),
+  ch: CH.map(d => ({ sp: d.safe, raw: false, en: true, a: 1, b: 0, vmax: d.vmaxDef, out: d.safe, lastValid: d.safe, touched: 0 }))
+};
+
+const canSend = () => S.mode === 'connected' || S.mode === 'demo';
+function outTarget(i) { const c = S.ch[i]; return c.en ? c.sp : CH[i].safe; }
+function dutyOf(i) {
+  const c = S.ch[i], v = c.en ? c.sp : CH[i].safe, raw = c.en && c.raw;
+  const vc = raw ? v : (v - c.b) / (c.a || 1);
+  return clamp(vc / c.vmax, 0, 1);
+}
+function faultOf(i) {
+  if (!CH[i].faults || !S.ch[i].en) return null;
+  const v = S.ch[i].sp;
+  if (v < 0.495) return 'low';
+  if (v > 4.505) return 'high';
+  return null;
+}
+
+/* =====================================================================
+   Toasts y consola
+   ===================================================================== */
+function toast(msg, kind = 'info', ms = 2800) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + kind; el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 320); }, ms);
+}
+function log(kind, txt) {
+  const box = $('#log'), el = document.createElement('div');
+  const d = new Date(), t = d.toTimeString().slice(0, 8);
+  const arrow = kind === 'tx' ? '→ ' : kind === 'rx' ? '← ' : kind === 'err' ? '✕ ' : '· ';
+  el.innerHTML = '<span class="t">' + t + '</span> <span class="' + kind + '"></span>';
+  el.lastChild.textContent = arrow + txt;
+  box.appendChild(el);
+  while (box.childElementCount > 120) box.firstChild.remove();
+  box.scrollTop = box.scrollHeight;
+}
+
+/* =====================================================================
+   Tarjetas de canal
+   ===================================================================== */
+const A0 = -120, A1 = 120;
+function polar(cx, cy, r, a) { const t = a * Math.PI / 180; return [cx + r * Math.sin(t), cy - r * Math.cos(t)]; }
+function arc(cx, cy, r, a0, a1) {
+  const [x0, y0] = polar(cx, cy, r, a0), [x1, y1] = polar(cx, cy, r, a1);
+  return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+}
+const angOf = (v, g) => A0 + (A1 - A0) * clamp(v / g, 0, 1);
+
+function gaugeSVG(d) {
+  let ticks = '', labels = '';
+  const steps = d.gmax === 10 ? 20 : 10;
+  for (let k = 0; k <= steps; k++) {
+    const v = d.gmax * k / steps, a = angOf(v, d.gmax), maj = d.gmax === 10 ? k % 4 === 0 : k % 2 === 0;
+    const [x0, y0] = polar(100, 100, maj ? 66 : 69, a), [x1, y1] = polar(100, 100, 75, a);
+    ticks += `<line class="tick${maj ? ' maj' : ''}" x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}"/>`;
+    if (maj) { const [lx, ly] = polar(100, 100, 54, a); labels += `<text class="tl" x="${lx.toFixed(1)}" y="${(ly + 4).toFixed(1)}">${+v.toFixed(1)}</text>`; }
+  }
+  let zones = '';
+  if (d.faults) {
+    zones = `<path class="g-zone badz" d="${arc(100, 100, 93, A0, angOf(0.5, 5))}"/>`
+          + `<path class="g-zone okz" d="${arc(100, 100, 93, angOf(0.5, 5) + 1, angOf(4.5, 5) - 1)}"/>`
+          + `<path class="g-zone badz" d="${arc(100, 100, 93, angOf(4.5, 5), A1)}"/>`;
+  }
+  return `<svg class="gauge" viewBox="0 0 200 172" aria-hidden="true">
+    ${zones}
+    <path class="g-bg" d="${arc(100, 100, 84, A0, A1)}"/>
+    <path class="g-fill" d="${arc(100, 100, 84, A0, A1)}" pathLength="100" stroke-dasharray="0 100"/>
+    ${ticks}${labels}
+    <g class="needle" transform="rotate(${A0} 100 100)"><line x1="100" y1="108" x2="100" y2="40"/><circle cx="100" cy="100" r="7"/></g>
+    <text class="g-val" x="100" y="146">0.00 V</text>
+    <text class="g-lbl" x="100" y="162">SALIDA ESTIMADA</text>
+  </svg>`;
+}
+
+function cardHTML(d, i) {
+  return `<article class="card ch" id="ch${i}" data-i="${i}" style="--c:${d.color};--cg:${d.glow};animation-delay:${0.08 * i + 0.1}s">
+    <header class="ch-head">
+      <div class="ch-tag">AO${d.id}</div>
+      <div class="ch-title"><b>${d.name}</b><span>${d.j} · GPIO${d.gpio} · ${d.pin} del LM324</span></div>
+      <label class="switch" title="Encender o apagar la salida"><input type="checkbox" class="sw" checked><span class="track"><span class="knob"></span></span><em class="sw-txt">ON</em></label>
+    </header>
+    <div class="ch-body">
+      ${gaugeSVG(d)}
+      <div class="readout">
+        <div class="lbl">Voltaje pedido</div>
+        <button class="value" type="button" aria-label="Escribir voltaje"><span class="num">0.00</span><span class="unit">V</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg></button>
+        <div class="edit" hidden><input class="vin" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" aria-label="Voltaje"><button class="btn primary vok" type="button">OK</button></div>
+        <div class="meta"><b class="pct">0 %</b> del rango · duty <b class="duty">0.0 %</b></div>
+        <div class="state"></div>
+      </div>
+    </div>
+    <div class="slider-row">
+      <button class="step minus" type="button" aria-label="Bajar 0.1 V">−</button>
+      <input class="slider" type="range" min="${d.min}" max="${d.max}" step="0.01" value="${d.safe}" aria-label="Voltaje ${d.name}">
+      <button class="step plus" type="button" aria-label="Subir 0.1 V">+</button>
+    </div>
+    <div class="scale"><span>${d.min} V</span><span>${d.max} V</span></div>
+    <div class="chips">${d.presets.map(v => `<button class="chip" type="button" data-v="${v}">${v} V</button>`).join('')}</div>
+    ${d.faults ? `<div class="faults"><span>Simular falla</span>
+      <button class="fbtn" type="button" data-f="low">Cable roto · 0 V</button>
+      <button class="fbtn" type="button" data-f="high">Corto a Vcc · máx</button>
+      <button class="fbtn okf" type="button" data-f="none">Señal normal</button></div>` : ''}
+  </article>`;
+}
+
+function renderCh(i, bump) {
+  const d = CH[i], c = S.ch[i], el = $('#ch' + i);
+  if (!el) return;
+  const num = el.querySelector('.num');
+  const txt = fmt(c.sp, 2);
+  if (num.textContent !== txt) {
+    num.textContent = txt;
+    if (bump) { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+  }
+  const slider = el.querySelector('.slider');
+  const sv = c.raw ? c.lastValid : c.sp;
+  if (document.activeElement !== slider || !canSend()) slider.value = sv;
+  slider.style.setProperty('--p', ((clamp(sv, d.min, d.max) - d.min) / (d.max - d.min) * 100) + '%');
+  el.querySelector('.pct').textContent = c.raw ? 'fuera' : Math.round((c.sp - d.min) / (d.max - d.min) * 100) + ' %';
+  el.querySelector('.duty').textContent = (dutyOf(i) * 100).toFixed(1) + ' %';
+  const sw = el.querySelector('.sw');
+  sw.checked = c.en;
+  el.querySelector('.sw-txt').textContent = c.en ? 'ON' : 'OFF';
+  el.classList.toggle('off', !c.en);
+  $$('.chip', el).forEach(b => b.classList.toggle('on', !c.raw && Math.abs(+b.dataset.v - c.sp) < 0.0005));
+
+  const f = faultOf(i);
+  let st = '';
+  if (!c.en) st = `<span class="badge offb">SALIDA APAGADA → ${fmt(d.safe, 1)} V</span>`;
+  else if (d.faults) st = f === 'low' ? '<span class="badge badb">FALLA BAJA · cable roto</span>'
+                       : f === 'high' ? '<span class="badge badb">FALLA ALTA · corto a Vcc</span>'
+                       : '<span class="badge okb">SEÑAL VÁLIDA</span>';
+  else st = '<span class="badge okb">ACTIVA</span>';
+  if (c.a !== 1 || c.b !== 0) st += '<span class="badge">CALIBRADO</span>';
+  el.querySelector('.state').innerHTML = st;
+  if (d.faults) {
+    $$('.fbtn', el).forEach(b => b.classList.toggle('on', (b.dataset.f === 'none' && !f && c.en) || b.dataset.f === f));
+  }
+  el.querySelector('.g-fill').setAttribute('stroke-dasharray', (clamp(outTarget(i) / d.gmax, 0, 1) * 100).toFixed(2) + ' 100');
+}
+const renderAll = () => CH.forEach((_, i) => renderCh(i));
+
+const gaugeCache = CH.map(() => ({ a: null, t: null }));
+function updateGauge(i) {
+  const el = $('#ch' + i); if (!el) return;
+  const c = S.ch[i], a = angOf(c.out, CH[i].gmax).toFixed(1), t = fmt(c.out, 2) + ' V', g = gaugeCache[i];
+  if (g.a !== a) { el.querySelector('.needle').setAttribute('transform', `rotate(${a} 100 100)`); g.a = a; }
+  if (g.t !== t) { el.querySelector('.g-val').textContent = t; g.t = t; }
+}
+
+function setSP(i, v, src) {
+  const d = CH[i], c = S.ch[i];
+  if (!canSend()) { toast('Conéctate a la ESP32 o activa el modo demo', 'warn'); renderCh(i); return; }
+  v = clamp(Math.round(v * 1000) / 1000, d.min, d.max);
+  c.sp = v; c.raw = false; c.lastValid = v; c.touched = now();
+  renderCh(i, src !== 'slider');
+  send(`S${d.id}=${Math.round(v * 1000)}`, 'V' + d.id);
+}
+
+function holdRepeat(btn, fn) {
+  let t1 = null, t2 = null;
+  const stop = () => { clearTimeout(t1); clearInterval(t2); t1 = t2 = null; };
+  btn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (!canSend()) { toast('Conéctate a la ESP32 o activa el modo demo', 'warn'); return; }
+    fn(); t1 = setTimeout(() => { t2 = setInterval(fn, 70); }, 380);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => btn.addEventListener(ev, stop));
+  btn.addEventListener('click', e => { if (e.detail === 0) fn(); });
+}
+
+function openEditor(i) {
+  const d = CH[i], el = $('#ch' + i);
+  if (!canSend()) { toast('Conéctate a la ESP32 o activa el modo demo', 'warn'); return; }
+  const btn = el.querySelector('.value'), box = el.querySelector('.edit'), inp = box.querySelector('.vin');
+  btn.hidden = true; box.hidden = false;
+  inp.value = fmt(S.ch[i].sp, 2);
+  inp.placeholder = `${d.min} a ${d.max}`;
+  inp.focus(); inp.select();
+}
+function closeEditor(i, apply, soft) {
+  const d = CH[i], el = $('#ch' + i), box = el.querySelector('.edit'), inp = box.querySelector('.vin');
+  if (box.hidden) return true;
+  if (apply) {
+    const v = parseNum(inp.value);
+    if (!isFinite(v) || v < d.min - 1e-9 || v > d.max + 1e-9) {
+      toast(`Fuera de rango: escribe un valor entre ${d.min} y ${d.max} V`, 'bad');
+      if (!soft) { box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake'); inp.focus(); return false; }
+    } else setSP(i, v, 'edit');
+  }
+  box.hidden = true; el.querySelector('.value').hidden = false;
+  return true;
+}
+
+function buildCards() {
+  $('#cards').innerHTML = CH.map(cardHTML).join('');
+  CH.forEach((d, i) => {
+    const el = $('#ch' + i), c = S.ch[i];
+    el.addEventListener('pointerdown', () => selectChannel(i, false, true));
+    const slider = el.querySelector('.slider');
+    slider.addEventListener('input', () => {
+      if (!canSend()) { renderCh(i); return; }
+      slider.style.setProperty('--p', ((+slider.value - d.min) / (d.max - d.min) * 100) + '%');
+      setSP(i, +slider.value, 'slider');
+    });
+    holdRepeat(el.querySelector('.minus'), () => setSP(i, Math.round((c.lastValid - 0.1) * 100) / 100, 'step'));
+    holdRepeat(el.querySelector('.plus'), () => setSP(i, Math.round((c.lastValid + 0.1) * 100) / 100, 'step'));
+    $$('.chip', el).forEach(b => b.addEventListener('click', () => setSP(i, +b.dataset.v, 'preset')));
+    el.querySelector('.value').addEventListener('click', () => openEditor(i));
+    const inp = el.querySelector('.vin');
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); closeEditor(i, true, false); }
+      if (e.key === 'Escape') closeEditor(i, false);
+    });
+    inp.addEventListener('blur', () => setTimeout(() => closeEditor(i, true, true), 150));
+    el.querySelector('.vok').addEventListener('pointerdown', e => { e.preventDefault(); closeEditor(i, true, false); });
+    el.querySelector('.sw').addEventListener('change', e => {
+      if (!canSend()) { toast('Conéctate a la ESP32 o activa el modo demo', 'warn'); renderCh(i); return; }
+      c.en = e.target.checked; c.touched = now(); renderCh(i);
+      send(`E${d.id}=${c.en ? 1 : 0}`, 'E' + d.id);
+    });
+    $$('.fbtn', el).forEach(b => b.addEventListener('click', () => {
+      if (!canSend()) { toast('Conéctate a la ESP32 o activa el modo demo', 'warn'); return; }
+      const f = b.dataset.f;
+      if (!c.en) { c.en = true; send(`E${d.id}=1`, 'E' + d.id); }
+      if (f === 'none') { setSP(i, c.lastValid, 'preset'); return; }
+      c.raw = true; c.sp = f === 'low' ? 0 : Math.round(c.vmax * 1000) / 1000; c.touched = now();
+      renderCh(i, true);
+      send(`R${d.id}=${f === 'low' ? 0 : 99999}`, 'V' + d.id);
+      toast(f === 'low' ? 'Falla simulada: cable roto (0 V). El PLC debe marcar alarma baja.' : 'Falla simulada: corto a Vcc (máximo). El PLC debe marcar alarma alta.', 'warn', 3600);
+    }));
+    renderCh(i);
+  });
+}
+
+function selectChannel(i, fromModel, quiet) {
+  S.sel = i;
+  CH.forEach((_, k) => $('#ch' + k).classList.toggle('sel', k === i));
+  if (V3.ok) V3.select(i);
+  if (fromModel) {
+    const el = $('#ch' + i);
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    if (canSend()) setTimeout(() => openEditor(i), 420);
+  }
+  if (!quiet && cal.phase == null && cal.i !== i) { cal.i = i; renderCal(); }
+}
+
+/* =====================================================================
+   Bluetooth (Web Bluetooth) con cola de envío
+   ===================================================================== */
+const enc = new TextEncoder(), dec = new TextDecoder();
+let device = null, rxChar = null, txChar = null, rxBuf = '';
+let pending = new Map(), pumping = false, userDisc = false;
+
+function send(cmd, key) {
+  if (S.mode === 'demo') {
+    log('tx', cmd);
+    const out = sim.handle(cmd);
+    setTimeout(() => out.forEach(l => { log('rx', l); handleLine(l); }), 35);
+    return;
+  }
+  if (!rxChar) return;
+  pending.delete(key || cmd);
+  pending.set(key || cmd, cmd);
+  pump();
+}
+async function pump() {
+  if (pumping) return;
+  pumping = true;
+  try {
+    while (pending.size && rxChar) {
+      const [k, cmd] = pending.entries().next().value;
+      pending.delete(k);
+      try {
+        const data = enc.encode(cmd + '\n');
+        if (rxChar.writeValueWithResponse) await rxChar.writeValueWithResponse(data);
+        else await rxChar.writeValue(data);
+        log('tx', cmd);
+      } catch (e) { log('err', 'No se envió ' + cmd + ': ' + (e.message || e)); await sleep(60); }
+    }
+  } finally { pumping = false; }
+}
+async function drain(ms = 1500) { const t0 = now(); while ((pumping || pending.size) && now() - t0 < ms) await sleep(20); }
+
+function onNotify(e) {
+  rxBuf += dec.decode(e.target.value, { stream: true });
+  let k;
+  while ((k = rxBuf.indexOf('\n')) >= 0) {
+    const line = rxBuf.slice(0, k).trim(); rxBuf = rxBuf.slice(k + 1);
+    if (line) { log('rx', line); handleLine(line); }
+  }
+  if (rxBuf.length > 200) rxBuf = '';
+}
+
+function handleLine(l) {
+  let m;
+  if ((m = /^V([1-3])=(-?\d+)(r?)$/i.exec(l))) {
+    const i = m[1] - 1, c = S.ch[i], raw = !!m[3], val = +m[2] / 1000;
+    const recent = now() - c.touched < 450;
+    if (!recent || raw !== c.raw) { c.sp = val; c.raw = raw; if (!raw) c.lastValid = val; }
+    renderCh(i, !recent); return;
+  }
+  if ((m = /^E([1-3])=([01])$/.exec(l))) { const i = m[1] - 1; S.ch[i].en = m[2] === '1'; renderCh(i); return; }
+  if ((m = /^C([1-3])=(-?[\d.]+),(-?[\d.]+)$/.exec(l))) { const i = m[1] - 1; S.ch[i].a = +m[2]; S.ch[i].b = +m[3]; renderCh(i); renderCal(); return; }
+  if ((m = /^X([1-3])=([\d.]+)$/.exec(l))) { const i = m[1] - 1; S.ch[i].vmax = +m[2]; renderCh(i); renderCal(); return; }
+  if ((m = /^M=([01])$/.exec(l))) { S.discMode = +m[1]; renderSettings(); return; }
+  if ((m = /^D=(\d+)$/.exec(l))) { S.delay = +m[1]; renderSettings(); return; }
+  if ((m = /^FW=(.+)$/.exec(l))) { S.fw = m[1]; $('#hudFw').textContent = S.fw; return; }
+  if (l === 'SAFE') { toast('Estado seguro aplicado: J1 0 V · J2 0.5 V · J3 0 V', 'warn'); return; }
+  if (/^ERR/.test(l)) toast('La ESP32 rechazó una orden', 'bad');
+}
+
+async function connectBLE() {
+  if (!('bluetooth' in navigator)) { showSupport(); toast('Este navegador no tiene Web Bluetooth', 'bad'); return; }
+  try {
+    setMode('connecting');
+    const dev = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: PREFIJO }], optionalServices: [NUS] });
+    device = dev;
+    device.ongattserverdisconnected = onDisconnected;
+    await openGatt();
+    toast('Conectado a ' + (device.name || PREFIJO), 'ok');
+  } catch (e) {
+    if (e && e.name === 'NotFoundError') { setMode('idle'); log('sys', 'Búsqueda cancelada'); return; }
+    log('err', e.message || String(e));
+    toast('No se pudo conectar: ' + (e.message || e), 'bad', 4200);
+    setMode('idle');
+  }
+}
+async function openGatt() {
+  const server = await device.gatt.connect();
+  const svc = await server.getPrimaryService(NUS);
+  rxChar = await svc.getCharacteristic(RX_UUID);
+  txChar = await svc.getCharacteristic(TX_UUID);
+  rxBuf = '';
+  txChar.oncharacteristicvaluechanged = onNotify;
+  await txChar.startNotifications();
+  setMode('connected');
+  hideBanner();
+  log('sys', 'Conectado a ' + (device.name || PREFIJO));
+  send('GET', 'GET');
+  if (S.wake) keepAwake(true);
+}
+function onDisconnected() {
+  rxChar = null; txChar = null; pending.clear();
+  log('sys', 'Conexión BLE cerrada');
+  if (userDisc) {
+    userDisc = false; setMode('idle'); hideBanner(); keepAwake(false);
+    if (S.discMode === 0) applySafeLocal();
+    toast(S.discMode === 0 ? 'Desconectado: salidas en estado seguro' : 'Desconectado: las salidas mantienen su valor', 'info', 3400);
+    return;
+  }
+  if (S.mode === 'idle') return;
+  setMode('reconnecting');
+  startLostBanner();
+  autoReconnect();
+}
+async function autoReconnect() {
+  for (let k = 1; k <= 6; k++) {
+    if (S.mode !== 'reconnecting' || !device) return;
+    await sleep(900);
+    if (S.mode !== 'reconnecting') return;
+    try { log('sys', `Reintento ${k} de 6…`); await openGatt(); toast('Reconectado', 'ok'); return; } catch (e) { /* sigue intentando */ }
+  }
+  if (S.mode === 'reconnecting') { setMode('lost'); updateBanner(); }
+}
+async function manualReconnect() {
+  if (!device) { connectBLE(); return; }
+  setMode('reconnecting'); updateBanner();
+  try { await openGatt(); toast('Reconectado', 'ok'); }
+  catch (e) { setMode('lost'); updateBanner(); toast('No se pudo reconectar. Revisa que la ESP32 esté encendida.', 'bad'); }
+}
+async function disconnectBLE() {
+  userDisc = true;
+  if (S.discMode === 0) { pending.clear(); send('BYE', 'BYE'); await drain(); }
+  try { if (device && device.gatt.connected) device.gatt.disconnect(); else onDisconnected(); }
+  catch (e) { onDisconnected(); }
+}
+function cancelLink() {
+  userDisc = false; setMode('idle'); hideBanner(); keepAwake(false);
+  try { if (device && device.gatt.connected) device.gatt.disconnect(); } catch (e) {}
+  log('sys', 'Reconexión cancelada');
+}
+function applySafeLocal() {
+  S.ch.forEach((c, i) => { c.sp = CH[i].safe; c.raw = false; c.lastValid = CH[i].safe; });
+  renderAll();
+}
+
+/* aviso de conexión perdida */
+let lostT0 = 0, lostTimer = null, safeShown = false;
+function startLostBanner() { lostT0 = now(); safeShown = false; $('#banner').classList.add('show'); clearInterval(lostTimer); updateBanner(); lostTimer = setInterval(updateBanner, 250); }
+function updateBanner() {
+  const el = (now() - lostT0) / 1000;
+  let msg;
+  if (S.discMode === 0) {
+    const left = Math.ceil(S.delay - el);
+    if (left > 0) msg = `Conexión perdida. Si no vuelve, la ESP32 pondrá las salidas en estado seguro en <b>${left} s</b>.`;
+    else {
+      msg = 'Conexión perdida. La ESP32 ya puso las salidas en <b>estado seguro</b> (J1 0 V · J2 0.5 V · J3 0 V).';
+      if (!safeShown) { safeShown = true; applySafeLocal(); }
+    }
+  } else msg = 'Conexión perdida. Las salidas <b>mantienen su último valor</b>.';
+  msg += S.mode === 'reconnecting' ? ' Reconectando…' : ' Toca Reconectar.';
+  $('#bannerMsg').innerHTML = msg;
+  $('#bannerSpin').hidden = S.mode !== 'reconnecting';
+}
+function hideBanner() { clearInterval(lostTimer); lostTimer = null; $('#banner').classList.remove('show'); }
+
+/* mantener pantalla encendida */
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && 'wakeLock' in navigator && document.visibilityState === 'visible' && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (e) { /* el navegador no lo permite */ }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && S.wake && canSend()) keepAwake(true);
+});
+
+/* =====================================================================
+   Estado de la app
+   ===================================================================== */
+function setMode(m) {
+  if (m !== 'connected' && m !== 'demo' && cal.phase) finishCal(true);
+  S.mode = m;
+  document.body.dataset.mode = m;
+  const pill = $('#pill'); pill.dataset.s = m;
+  $('#pillTxt').textContent = { idle: 'Sin conexión', connecting: 'Buscando…', connected: 'Conectado', reconnecting: 'Reconectando…', lost: 'Conexión perdida', demo: 'Modo demo' }[m];
+  const bc = $('#btnConn');
+  bc.querySelector('span').textContent = { connected: 'Desconectar', reconnecting: 'Cancelar', lost: 'Cancelar', demo: 'Conectar ESP32', connecting: 'Buscando…' }[m] || 'Conectar';
+  bc.classList.toggle('on', m === 'connected');
+  bc.disabled = m === 'connecting';
+  const bd = $('#btnDemo');
+  bd.hidden = m === 'connected' || m === 'reconnecting' || m === 'lost';
+  bd.querySelector('span').textContent = m === 'demo' ? 'Salir de demo' : 'Demo';
+  $('#hudDev').textContent = m === 'connected' ? (device && device.name || PREFIJO)
+    : m === 'demo' ? 'Simulador' : m === 'reconnecting' || m === 'lost' ? 'Sin enlace' : 'Sin dispositivo';
+  if (m !== 'connected' && m !== 'demo' && m !== 'reconnecting' && m !== 'lost') $('#hudFw').textContent = '—';
+  if (V3.ok) V3.setMode(m);
+}
+
+function renderSettings() {
+  $$('#segMode button').forEach(b => b.classList.toggle('on', +b.dataset.m === S.discMode));
+  $$('#segDelay button').forEach(b => b.classList.toggle('on', +b.dataset.d === S.delay));
+  $('#wakeSw').checked = S.wake;
+  $('#hudSafe').textContent = S.discMode === 0 ? `Al desconectar: seguro · ${S.delay} s` : 'Al desconectar: mantener';
+}
+
+function showSupport() {
+  let msg = '';
+  if (!window.isSecureContext) msg = 'Esta página no se abrió por HTTPS. Ábrela desde tu dirección de GitHub Pages (https://…github.io/…).';
+  else if (!('bluetooth' in navigator)) msg = 'Este navegador no tiene Web Bluetooth. Usa Chrome en Android, o Chrome / Edge en la laptop. No funciona en iPhone ni en Firefox.';
+  if (msg) { $('#supportMsg').textContent = msg + ' Mientras tanto puedes probar la interfaz con el botón Demo.'; $('#support').hidden = false; }
+}
+
+/* =====================================================================
+   Simulador (modo demo): imita al programa de la ESP32
+   ===================================================================== */
+const sim = {
+  lim: [[0, 10000], [500, 4500], [0, 5000]], safe: [0, 500, 0],
+  err: [[1.011, -0.016], [0.992, 0.011], [1.007, 0.008]],   // ganancia y desfase "reales" simulados
+  reset() {
+    this.sp = [0, 500, 0]; this.raw = [false, false, false]; this.en = [true, true, true];
+    this.a = [1, 1, 1]; this.b = [0, 0, 0]; this.vmax = CH.map(d => d.vmaxDef); this.M = S.discMode; this.D = S.delay;
+  },
+  vLine(i) { return `V${i + 1}=${this.sp[i]}${this.raw[i] ? 'r' : ''}`; },
+  cLine(i) { return `C${i + 1}=${this.a[i].toFixed(5)},${this.b[i].toFixed(4)}`; },
+  all() {
+    const o = ['FW=demo'];
+    for (let i = 0; i < 3; i++) o.push(this.vLine(i), `E${i + 1}=${this.en[i] ? 1 : 0}`, this.cLine(i), `X${i + 1}=${this.vmax[i].toFixed(3)}`);
+    o.push(`M=${this.M}`, `D=${this.D}`);
+    return o;
+  },
+  safeAll() { for (let i = 0; i < 3; i++) { this.sp[i] = this.safe[i]; this.raw[i] = false; } },
+  handle(cmd) {
+    const l = cmd.trim().toUpperCase(); let m;
+    if (l === 'GET') return this.all();
+    if (l === 'STOP' || l === 'BYE') { this.safeAll(); return [0, 1, 2].map(i => this.vLine(i)).concat('SAFE'); }
+    if ((m = /^CR([1-3])$/.exec(l))) { const i = m[1] - 1; this.a[i] = 1; this.b[i] = 0; return [this.cLine(i)]; }
+    if ((m = /^M=([01])$/.exec(l))) { this.M = +m[1]; return [`M=${this.M}`]; }
+    if ((m = /^D=(\d+)$/.exec(l))) { this.D = clamp(+m[1], 0, 30); return [`D=${this.D}`]; }
+    if ((m = /^([SREXC])([1-3])=(.+)$/.exec(l))) {
+      const k = m[1], i = m[2] - 1, val = m[3];
+      if (k === 'S') { const v = Math.round(+val); if (!isFinite(v)) return ['ERR']; this.sp[i] = clamp(v, this.lim[i][0], this.lim[i][1]); this.raw[i] = false; return [this.vLine(i)]; }
+      if (k === 'R') { const v = Math.round(+val); if (!isFinite(v)) return ['ERR']; this.sp[i] = clamp(v, 0, Math.round(this.vmax[i] * 1000)); this.raw[i] = true; return [this.vLine(i)]; }
+      if (k === 'E') { this.en[i] = val === '1'; return [`E${i + 1}=${this.en[i] ? 1 : 0}`]; }
+      if (k === 'C') { const [a, b] = val.split(',').map(Number); if (!isFinite(a) || !isFinite(b)) return ['ERR']; this.a[i] = clamp(a, 0.5, 2); this.b[i] = clamp(b, -1, 1); return [this.cLine(i)]; }
+      if (k === 'X') { const v = +val; if (!isFinite(v)) return ['ERR']; this.vmax[i] = clamp(v, 1, 20); return [`X${i + 1}=${this.vmax[i].toFixed(3)}`]; }
+    }
+    return ['ERR'];
+  },
+  measure(i) {   // lo que "marcaría el multímetro" en el simulador
+    const v = this.en[i] ? this.sp[i] / 1000 : this.safe[i] / 1000;
+    const raw = this.en[i] && this.raw[i];
+    let vc = raw ? v : (v - this.b[i]) / this.a[i];
+    vc = clamp(vc, 0, this.vmax[i]);
+    const [g, o] = this.err[i];
+    return Math.max(0.004, g * vc + o) + (Math.random() - 0.5) * 0.004;
+  }
+};
+sim.reset();
+
+function enterDemo() {
+  sim.reset();
+  setMode('demo');
+  log('sys', 'Modo demo: la ESP32 se simula en el navegador');
+  send('GET', 'GET');
+  toast('Modo demo activado: prueba la interfaz sin la placa', 'info', 3400);
+}
+function exitDemo() { if (cal.phase) finishCal(true); setMode('idle'); hideBanner(); applySafeLocal(); log('sys', 'Fin del modo demo'); }
+async function simDrop() {
+  if (S.mode !== 'demo') return;
+  if (cal.phase) finishCal(true);
+  setMode('reconnecting'); startLostBanner();
+  log('sys', 'Simulando pérdida de conexión…');
+  const wait = sim.M === 0 ? (sim.D + 1.2) * 1000 : 3500;
+  await sleep(wait);
+  if (S.mode !== 'reconnecting') return;
+  if (sim.M === 0) sim.safeAll();
+  setMode('demo'); hideBanner();
+  send('GET', 'GET');
+  toast(sim.M === 0 ? 'Reconectado: la ESP32 había pasado a estado seguro' : 'Reconectado: las salidas mantuvieron su valor', 'info', 3600);
+}
+
+/* =====================================================================
+   Calibración: pedido vs. medido
+   ===================================================================== */
+const cal = { i: 0, phase: null, idx: 0, saved: null, timer: null, cdTimer: null, run: [], fit: null };
+let calRows = store.get('rows', []);
+
+function buildCal() {
+  $('#calTabs').innerHTML = CH.map((d, i) => `<button class="tab" type="button" data-i="${i}" style="--c:${d.color}">AO${d.id} · ${d.name}</button>`).join('');
+  $$('#calTabs .tab').forEach(b => b.addEventListener('click', () => {
+    if (cal.phase) { toast('Termina o cancela la medición actual', 'warn'); return; }
+    cal.i = +b.dataset.i; $('#fitbox').hidden = true; renderCal(); selectChannel(cal.i, false, true);
+  }));
+  $('#calRaw').addEventListener('click', () => startCal('raw'));
+  $('#calVer').addEventListener('click', () => startCal('ver'));
+  $('#calReset').addEventListener('click', () => {
+    if (!canSend()) { toast('Conéctate a la ESP32 o activa el modo demo', 'warn'); return; }
+    const d = CH[cal.i];
+    if (!confirm(`¿Restaurar la calibración de AO${d.id} (a = 1, b = 0) y VMAX = ${d.vmaxDef} V?`)) return;
+    send(`CR${d.id}`, 'CR' + d.id); send(`X${d.id}=${d.vmaxDef}`, 'X' + d.id);
+    toast('Valores originales restaurados', 'ok');
+  });
+  $('#vmaxSave').addEventListener('click', () => {
+    if (!canSend()) { toast('Conéctate a la ESP32 o activa el modo demo', 'warn'); return; }
+    const v = parseNum($('#vmaxIn').value), d = CH[cal.i];
+    if (!isFinite(v) || v < 1 || v > 20) { toast('VMAX debe estar entre 1 y 20 V', 'bad'); return; }
+    send(`X${d.id}=${v}`, 'X' + d.id);
+    toast(`VMAX de AO${d.id} guardado: ${v} V`, 'ok');
+  });
+  $('#rOk').addEventListener('click', () => recordPoint(false));
+  $('#rSkip').addEventListener('click', () => recordPoint(true));
+  $('#rCancel').addEventListener('click', () => finishCal(true));
+  $('#rMeas').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); recordPoint(false); } });
+  $('#csvBtn').addEventListener('click', exportCSV);
+  $('#clearBtn').addEventListener('click', () => {
+    if (!calRows.length) return;
+    if (!confirm('¿Borrar todas las mediciones de la tabla?')) return;
+    calRows = []; store.set('rows', calRows); renderTable();
+  });
+  renderCal();
+}
+
+function renderCal() {
+  const d = CH[cal.i], c = S.ch[cal.i];
+  $$('#calTabs .tab').forEach(b => b.classList.toggle('on', +b.dataset.i === cal.i));
+  $('#calAB').textContent = `a = ${c.a.toFixed(5)} · b = ${c.b >= 0 ? '+' : ''}${c.b.toFixed(4)} V`;
+  if (document.activeElement !== $('#vmaxIn')) $('#vmaxIn').value = c.vmax.toFixed(3);
+  $('#calCard').style.setProperty('--c', d.color);
+  renderTable();
+}
+
+function startCal(phase) {
+  if (!canSend()) { toast('Conéctate a la ESP32 o activa el modo demo', 'warn'); return; }
+  if (cal.phase) return;
+  const i = cal.i, c = S.ch[i], d = CH[i];
+  cal.phase = phase; cal.idx = 0; cal.run = []; cal.fit = null;
+  cal.saved = { sp: c.sp, raw: c.raw, en: c.en };
+  $('#fitbox').hidden = true;
+  if (!c.en) send(`E${d.id}=1`, 'E' + d.id);
+  $('#runner').hidden = false;
+  ['#calRaw', '#calVer', '#calReset', '#vmaxSave'].forEach(s => { $(s).disabled = true; });
+  log('sys', `Calibración AO${d.id}: ${phase === 'raw' ? 'medición sin corrección' : 'verificación con corrección'}`);
+  runPoint();
+}
+
+function runPoint() {
+  const i = cal.i, d = CH[i], v = d.cal[cal.idx], mv = Math.round(v * 1000);
+  send(`${cal.phase === 'raw' ? 'R' : 'S'}${d.id}=${mv}`, 'V' + d.id);
+  S.ch[i].touched = 0;
+  $('#rPhase').textContent = cal.phase === 'raw' ? 'FASE 1 · SIN CORRECCIÓN' : 'FASE 2 · VERIFICACIÓN';
+  $('#rStep').textContent = `Punto ${cal.idx + 1} de ${d.cal.length}`;
+  $('#rPed').textContent = fmt(v, 2) + ' V';
+  $('#rHint').textContent = 'Esperando a que la salida se estabilice…';
+  const inp = $('#rMeas'); inp.value = ''; inp.disabled = true; $('#rOk').disabled = true;
+  const ring = $('#rRing');
+  ring.style.transition = 'none'; ring.style.strokeDashoffset = '0';
+  void ring.getBoundingClientRect();
+  ring.style.transition = 'stroke-dashoffset 3s linear'; ring.style.strokeDashoffset = '100';
+  let n = 3; $('#rCount').textContent = n;
+  clearInterval(cal.cdTimer); clearTimeout(cal.timer);
+  cal.cdTimer = setInterval(() => { n--; $('#rCount').textContent = Math.max(n, 0); if (n <= 0) clearInterval(cal.cdTimer); }, 1000);
+  cal.timer = setTimeout(() => {
+    $('#rCount').textContent = '✓';
+    $('#rHint').textContent = 'Escribe lo que marca el multímetro en la salida ' + d.j + '.';
+    inp.disabled = false; $('#rOk').disabled = false;
+    if (S.mode === 'demo') inp.value = sim.measure(i).toFixed(3);
+    inp.focus(); inp.select();
+  }, 3000);
+}
+
+function recordPoint(skip) {
+  if (!cal.phase) return;
+  const d = CH[cal.i], v = d.cal[cal.idx];
+  if (!skip) {
+    if ($('#rMeas').disabled) return;
+    const meas = parseNum($('#rMeas').value);
+    if (!isFinite(meas)) { const r = $('.r-input'); r.classList.remove('shake'); void r.offsetWidth; r.classList.add('shake'); toast('Escribe la lectura en volts, por ejemplo 2.497', 'bad'); return; }
+    const row = { t: new Date().toISOString(), ch: d.id, phase: cal.phase === 'raw' ? 'antes' : 'despues', ped: v, med: meas };
+    calRows.push(row); cal.run.push(row); store.set('rows', calRows); renderTable();
+  }
+  cal.idx++;
+  if (cal.idx < d.cal.length) runPoint(); else finishCal(false);
+}
+
+function finishCal(cancel) {
+  clearTimeout(cal.timer); clearInterval(cal.cdTimer);
+  const i = cal.i, d = CH[i], s = cal.saved, phase = cal.phase;
+  if (s && canSend()) {
+    send(`${s.raw ? 'R' : 'S'}${d.id}=${Math.round(s.sp * 1000)}`, 'V' + d.id);
+    if (!s.en) send(`E${d.id}=0`, 'E' + d.id);
+  }
+  cal.phase = null; cal.saved = null;
+  $('#runner').hidden = true;
+  ['#calRaw', '#calVer', '#calReset', '#vmaxSave'].forEach(sel => { $(sel).disabled = false; });
+  if (cancel) { toast('Medición cancelada, la salida volvió a su valor anterior', 'info'); return; }
+  if (phase === 'raw') showFit(); else { toast('Verificación terminada. Revisa los errores en la tabla.', 'ok', 3400); }
+}
+
+function showFit() {
+  const d = CH[cal.i];
+  const pts = cal.run.filter(r => r.ped > 0.03 * d.max).map(r => ({ x: r.ped, y: r.med }));
+  const box = $('#fitbox');
+  if (pts.length < 2) { box.hidden = false; box.innerHTML = 'Se necesitan al menos 2 puntos mayores a 0 V para calcular la corrección.'; return; }
+  const n = pts.length; let sx = 0, sy = 0, sxx = 0, sxy = 0;
+  pts.forEach(p => { sx += p.x; sy += p.y; sxx += p.x * p.x; sxy += p.x * p.y; });
+  const den = n * sxx - sx * sx;
+  if (Math.abs(den) < 1e-9) { box.hidden = false; box.innerHTML = 'Los puntos no permiten calcular una recta.'; return; }
+  const a = (n * sxy - sx * sy) / den, b = (sy - a * sx) / n;
+  const span = d.max - d.min;
+  const before = Math.max(...pts.map(p => Math.abs(p.y - p.x))) / span * 100;
+  const after = Math.max(...pts.map(p => Math.abs(p.y - (a * p.x + b)))) / span * 100;
+  cal.fit = { a, b };
+  box.hidden = false;
+  box.innerHTML = `<div>Recta medida: <b>V_real = ${a.toFixed(5)} · V_pedido ${b >= 0 ? '+' : '−'} ${Math.abs(b).toFixed(4)} V</b></div>
+    <div>Error máximo sin corrección: <b>${before.toFixed(2)} % FS</b> · esperado con corrección: <b>${after.toFixed(2)} % FS</b></div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm primary" id="fitApply" type="button">Aplicar y guardar en la ESP32</button><button class="btn sm ghost" id="fitClose" type="button">Descartar</button></div>`;
+  $('#fitApply').addEventListener('click', () => {
+    if (!canSend()) { toast('Conéctate a la ESP32 o activa el modo demo', 'warn'); return; }
+    if (a < 0.5 || a > 2 || Math.abs(b) > 1) { toast('La corrección es demasiado grande. Revisa las mediciones y el cableado.', 'bad', 4200); return; }
+    send(`C${d.id}=${a.toFixed(5)},${b.toFixed(4)}`, 'C' + d.id);
+    box.innerHTML = `Corrección aplicada y guardada en la ESP32. Ahora usa <b>2 · Verificar</b> para comprobarla.`;
+    toast('Corrección guardada en la ESP32', 'ok');
+  });
+  $('#fitClose').addEventListener('click', () => { box.hidden = true; });
+}
+
+function renderTable() {
+  const d = CH[cal.i], span = d.max - d.min;
+  const rows = calRows.filter(r => r.ch === d.id);
+  const body = $('#calBody');
+  if (!rows.length) body.innerHTML = '<tr class="empty"><td colspan="6">Sin mediciones para este canal todavía</td></tr>';
+  else body.innerHTML = rows.map(r => {
+    const e = r.med - r.ped, pf = e / span * 100, cls = Math.abs(pf) < 0.5 ? 'e-ok' : Math.abs(pf) < 1.5 ? 'e-mid' : 'e-bad';
+    const t = new Date(r.t).toTimeString().slice(0, 5);
+    return `<tr><td>${t}</td><td><span class="ph ${r.phase === 'antes' ? 'a' : 'd'}">${r.phase === 'antes' ? 'antes' : 'después'}</span></td>
+      <td>${fmt(r.ped, 2)}</td><td>${fmt(r.med, 3)}</td><td class="${cls}">${e >= 0 ? '+' : ''}${fmt(e, 3)}</td><td class="${cls}">${pf >= 0 ? '+' : ''}${pf.toFixed(2)}</td></tr>`;
+  }).join('');
+  $('#rowCount').textContent = `${rows.length} en este canal · ${calRows.length} en total`;
+  const wrap = $('.tablewrap'); wrap.scrollTop = wrap.scrollHeight;
+}
+
+function exportCSV() {
+  if (!calRows.length) { toast('No hay mediciones para exportar', 'warn'); return; }
+  const head = 'fecha,hora,canal,rango,fase,pedido_V,medido_V,error_V,error_pct_FS';
+  const lines = calRows.map(r => {
+    const d = CH[r.ch - 1], dt = new Date(r.t), e = r.med - r.ped, pf = e / (d.max - d.min) * 100;
+    const fecha = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    return [fecha, dt.toTimeString().slice(0, 8), 'AO' + d.id, `${d.min}-${d.max} V`, r.phase === 'antes' ? 'antes' : 'despues',
+      r.ped.toFixed(3), r.med.toFixed(3), e.toFixed(3), pf.toFixed(3)].join(',');
+  });
+  const blob = new Blob(['\ufeff' + head + '\n' + lines.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  const t = new Date();
+  a.href = URL.createObjectURL(blob);
+  a.download = `calibracion_esp32_${t.getFullYear()}${String(t.getMonth() + 1).padStart(2, '0')}${String(t.getDate()).padStart(2, '0')}_${String(t.getHours()).padStart(2, '0')}${String(t.getMinutes()).padStart(2, '0')}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast('CSV descargado', 'ok');
+}
+
+/* =====================================================================
+   Paro
+   ===================================================================== */
+function estop() {
+  const b = $('#estop'); b.classList.remove('hit'); void b.offsetWidth; b.classList.add('hit');
+  if (navigator.vibrate) navigator.vibrate(120);
+  if (!canSend()) { toast('Sin conexión: no hay salidas que detener desde aquí', 'warn'); return; }
+  if (cal.phase) { cal.saved = null; finishCal(true); }
+  pending.clear();
+  S.ch.forEach((c, i) => { c.sp = CH[i].safe; c.raw = false; c.lastValid = CH[i].safe; c.touched = now(); });
+  renderAll();
+  send('STOP', 'STOP');
+  toast('PARO: J1 0 V · J2 0.5 V · J3 0 V', 'warn', 3200);
+}
+
+/* =====================================================================
+   Escena 3D (Three.js)
+   ===================================================================== */
+const V3 = { ok: false };
+
+function init3D() {
+  const stage = $('#stage'), canvas = $('#scene');
+  if (!window.THREE) { stage.classList.add('no3d'); return; }
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' }); }
+  catch (e) { stage.classList.add('no3d'); return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x060a11, 24, 52);
+  const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 200);
+  const target = new THREE.Vector3(0, 0.9, 0.2);
+
+  scene.add(new THREE.HemisphereLight(0xb4cdf5, 0x0a0f18, 0.85));
+  const key = new THREE.DirectionalLight(0xffffff, 0.95); key.position.set(6, 12, 9); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x5eead4, 0.55); rim.position.set(-9, 6, -10); scene.add(rim);
+  const fill = new THREE.PointLight(0x8b5cf6, 0.7, 34); fill.position.set(9, 5, -5); scene.add(fill);
+
+  const M = (color, o) => new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.55, metalness: 0.1 }, o || {}));
+  const metal = M(0xb9c2cc, { metalness: 0.9, roughness: 0.32 });
+  const gold = M(0xd4a72c, { metalness: 0.85, roughness: 0.3 });
+  const black = M(0x121418, { roughness: 0.45 });
+
+  function canvasTex(w, h, draw) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'); draw(g, w, h);
+    const t = new THREE.CanvasTexture(c); t.anisotropy = renderer.capabilities.getMaxAnisotropy ? Math.min(8, renderer.capabilities.getMaxAnisotropy()) : 1;
+    return { tex: t, canvas: c, ctx: g };
+  }
+  function roundRect(g, x, y, w, h, r) {
+    g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+  function roundedSlab(w, d, h, r, bevel) {
+    const s = new THREE.Shape(), x = -w / 2, y = -d / 2;
+    s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + d - r);
+    s.quadraticCurveTo(x + w, y + d, x + w - r, y + d); s.lineTo(x + r, y + d); s.quadraticCurveTo(x, y + d, x, y + d - r);
+    s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+    const g = new THREE.ExtrudeGeometry(s, { depth: h - 2 * bevel, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 10 });
+    g.rotateX(-Math.PI / 2); g.translate(0, bevel, 0);
+    return g;
+  }
+  const box = (w, h, d, mat, x, y, z, parent) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); (parent || model).add(m); return m; };
+
+  const dotTex = canvasTex(64, 64, (g, w, h) => {
+    const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.3, 'rgba(255,255,255,.75)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = r; g.fillRect(0, 0, w, h);
+  }).tex;
+
+  const pivot = new THREE.Group(); scene.add(pivot);
+  const model = new THREE.Group(); pivot.add(model);
+  const T = 1.36;                                  // superficie de la PCB
+  const P = (x, z, y) => new THREE.Vector3(x, y === undefined ? T + 0.06 : y, z);
+
+  /* suelo, rejilla y sombra */
+  const floorTex = canvasTex(512, 512, (g) => {
+    const r = g.createRadialGradient(256, 256, 0, 256, 256, 256);
+    r.addColorStop(0, 'rgba(40,80,140,.45)'); r.addColorStop(0.5, 'rgba(20,40,80,.18)'); r.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = r; g.fillRect(0, 0, 512, 512);
+  }).tex;
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(28, 64), new THREE.MeshBasicMaterial({ map: floorTex, transparent: true, depthWrite: false }));
+  floor.rotation.x = -Math.PI / 2; scene.add(floor);
+  const grid = new THREE.GridHelper(56, 56, 0x22d3ee, 0x1a2c46);
+  grid.material.transparent = true; grid.material.opacity = 0.14; grid.material.depthWrite = false; grid.position.y = 0.003; scene.add(grid);
+  const shTex = canvasTex(256, 256, (g) => {
+    const r = g.createRadialGradient(128, 128, 20, 128, 128, 128);
+    r.addColorStop(0, 'rgba(0,0,0,.85)'); r.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = r; g.fillRect(0, 0, 256, 256);
+  }).tex;
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(15, 19), new THREE.MeshBasicMaterial({ map: shTex, transparent: true, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.006; scene.add(shadow);
+
+  /* riel DIN y gabinete */
+  box(24, 0.16, 1.5, metal, 0, 0.08, 0);
+  box(24, 0.3, 0.1, metal, 0, 0.15, -0.72);
+  box(24, 0.3, 0.1, metal, 0, 0.15, 0.72);
+  const housing = new THREE.Mesh(roundedSlab(9.2, 13.4, 1.05, 0.55, 0.08), M(0x19202b, { metalness: 0.35, roughness: 0.48 }));
+  housing.position.y = 0.18; model.add(housing);
+  for (let k = 0; k < 9; k++) {
+    box(0.04, 0.5, 0.65, M(0x07090d), -4.69, 0.72, -5 + k * 1.25);
+    box(0.04, 0.5, 0.65, M(0x07090d), 4.69, 0.72, -5 + k * 1.25);
+  }
+  const frontTex = canvasTex(1024, 96, (g, w, h) => {
+    g.fillStyle = '#0d131c'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#22d3ee'; g.fillRect(0, 0, 12, h);
+    g.fillStyle = '#cbd5e1'; g.font = '700 46px Rajdhani, sans-serif'; g.fillText('AO-3', 34, 63);
+    g.fillStyle = '#7b8ba0'; g.font = '600 30px Rajdhani, sans-serif'; g.fillText('MÓDULO DE SALIDAS ANALÓGICAS · ESP32 · 12 VDC', 150, 60);
+  });
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 0.72), new THREE.MeshBasicMaterial({ map: frontTex.tex }));
+  front.position.set(0, 0.7, 6.8); model.add(front);
+
+  /* PCB y serigrafía */
+  const pcb = new THREE.Mesh(roundedSlab(8.5, 12.7, 0.13, 0.4, 0.03), M(0x0d5a31, { roughness: 0.62 }));
+  pcb.position.y = 1.23; model.add(pcb);
+  const SW = 1024, SH = 1530;
+  const sx = x => (x + 4.25) / 8.5 * SW, sz = z => (z + 6.35) / 12.7 * SH;
+  const silk = canvasTex(SW, SH, (g) => {
+    g.strokeStyle = 'rgba(230,240,235,.75)'; g.fillStyle = 'rgba(230,240,235,.85)'; g.lineWidth = 3;
+    const txt = (s, x, z, size, align) => { g.font = `700 ${size || 30}px Rajdhani, sans-serif`; g.textAlign = align || 'center'; g.fillText(s, sx(x), sz(z)); };
+    [['J1 · 0-10 V', -3.35, -5.75], ['J2 · 0.5-4.5 V', -3.35, -0.75], ['J3 · 0-5 V', 3.35, -5.75], ['J4 · 0-3.3 V', 3.35, -0.75], ['J5 · +12 V  GND', 2.7, 4.45]].forEach(a => txt(a[0], a[1], a[2], 32));
+    txt('U2 · LM324', 0, -3.05, 30);
+    txt('U1 · ESP32-DevKitC', 0, 6.15, 28);
+    [['R1', -1.55, -3.4], ['R2', -1.55, -4.7], ['R3', 0.5, -5.35], ['R4', 0.75, -4.0], ['R5', -1.75, 0.95], ['R6', -2.65, -0.65], ['R7', 1.35, -3.55], ['R8', 1.15, -1.0], ['R9', 2.95, -1.3]].forEach(a => txt(a[0], a[1], a[2], 24));
+    [[-3.75, -5.85], [3.75, -5.85], [-3.75, 5.85], [3.75, 5.85]].forEach(p => {
+      g.beginPath(); g.arc(sx(p[0]), sz(p[1]), 26, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.arc(sx(p[0]), sz(p[1]), 14, 0, Math.PI * 2); g.fillStyle = 'rgba(200,170,90,.9)'; g.fill(); g.fillStyle = 'rgba(230,240,235,.85)';
+    });
+    g.textAlign = 'left'; g.font = '700 30px Rajdhani, sans-serif'; g.fillText('PLC SIGNAL LAB', sx(-3.9), sz(3.4));
+    g.font = '600 22px Rajdhani, sans-serif'; g.fillStyle = 'rgba(230,240,235,.6)'; g.fillText('REV 1.0 · RETO DAIKIN', sx(-3.9), sz(3.75));
+    g.strokeStyle = 'rgba(230,240,235,.35)'; g.lineWidth = 2;
+    roundRect(g, sx(-1.55), sz(0.15), sx(1.55) - sx(-1.55), sz(5.95) - sz(0.15), 10); g.stroke();
+    roundRect(g, sx(-0.75), sz(-2.75), sx(0.75) - sx(-0.75), sz(-0.45) - sz(-2.75), 8); g.stroke();
+  });
+  const silkMesh = new THREE.Mesh(new THREE.PlaneGeometry(8.5, 12.7), new THREE.MeshBasicMaterial({ map: silk.tex, transparent: true, depthWrite: false }));
+  silkMesh.rotation.x = -Math.PI / 2; silkMesh.position.y = T + 0.003; model.add(silkMesh);
+
+  /* LM324 */
+  const ic = new THREE.Group(); ic.position.set(0, T, -1.6); model.add(ic);
+  box(0.95, 0.36, 2.15, M(0x15171c, { roughness: 0.38 }), 0, 0.3, 0, ic);
+  for (let k = 0; k < 7; k++) {
+    const z = -0.9 + k * 0.3;
+    [-1, 1].forEach(s => { box(0.16, 0.05, 0.1, metal, s * 0.54, 0.22, z, ic); box(0.05, 0.24, 0.1, metal, s * 0.61, 0.11, z, ic); });
+  }
+  const icLbl = canvasTex(256, 512, (g, w, h) => {
+    g.fillStyle = '#16181d'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#0b0c0f'; g.beginPath(); g.arc(w / 2, 0, 34, 0, Math.PI); g.fill();
+    g.fillStyle = '#9aa3ae'; g.beginPath(); g.arc(46, 70, 12, 0, Math.PI * 2); g.fill();
+    g.save(); g.translate(w / 2, h / 2); g.rotate(Math.PI / 2);
+    g.fillStyle = '#c7ccd3'; g.font = '700 64px "JetBrains Mono", monospace'; g.textAlign = 'center'; g.fillText('LM324N', 0, -10);
+    g.fillStyle = '#8b939e'; g.font = '600 34px "JetBrains Mono", monospace'; g.fillText('TI  2618', 0, 44);
+    g.restore();
+  });
+  const icTop = new THREE.Mesh(new THREE.PlaneGeometry(0.93, 2.13), new THREE.MeshBasicMaterial({ map: icLbl.tex }));
+  icTop.rotation.x = -Math.PI / 2; icTop.position.set(0, 0.482, 0); ic.add(icTop);
+
+  /* ESP32 DevKit */
+  const esp = new THREE.Group(); esp.position.set(0, T, 3.05); model.add(esp);
+  box(2.9, 0.1, 5.7, M(0x101318, { roughness: 0.5 }), 0, 0.42, 0, esp);
+  [-1.27, 1.27].forEach(x => {
+    box(0.24, 0.26, 5.4, black, x, 0.13, 0, esp);
+    for (let k = 0; k < 19; k++) { const z = -2.52 + k * 0.28; box(0.07, 0.62, 0.07, gold, x, 0.31, z, esp); }
+  });
+  box(1.95, 0.06, 2.55, M(0x1c2532), 0, 0.5, -1.45, esp);
+  box(1.75, 0.28, 1.95, M(0xd9dde3, { metalness: 0.95, roughness: 0.28 }), 0, 0.67, -1.15, esp);
+  const shieldLbl = canvasTex(512, 560, (g, w, h) => {
+    g.fillStyle = '#e4e7eb'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#3a4048'; g.font = '700 54px "JetBrains Mono", monospace'; g.textAlign = 'left';
+    g.fillText('ESP32-WROOM-32', 30, 110);
+    g.font = '600 32px "JetBrains Mono", monospace'; g.fillStyle = '#5b636d';
+    g.fillText('Wi-Fi · Bluetooth LE', 30, 170); g.fillText('240 MHz · 2 núcleos', 30, 220);
+    g.strokeStyle = '#7c848e'; g.lineWidth = 6; roundRect(g, 30, 290, 150, 150, 18); g.stroke();
+    g.fillStyle = '#7c848e'; g.font = '700 70px Rajdhani, sans-serif'; g.fillText('BLE', 52, 390);
+    g.font = '600 26px "JetBrains Mono", monospace'; g.fillText('FCC ID: 2AC7Z-ESP32', 210, 340); g.fillText('ESP32-PLC', 210, 390);
+  });
+  const shTop = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.86), new THREE.MeshBasicMaterial({ map: shieldLbl.tex }));
+  shTop.rotation.x = -Math.PI / 2; shTop.position.set(0, 0.812, -1.15); esp.add(shTop);
+  for (let k = 0; k < 5; k++) box(0.08, 0.02, 0.32, gold, -0.7 + k * 0.35, 0.54, -2.48, esp);
+  box(1.6, 0.02, 0.06, gold, 0, 0.54, -2.66, esp);
+  box(0.78, 0.3, 0.6, metal, 0, 0.6, 2.62, esp);
+  [-0.85, 0.85].forEach(x => { box(0.34, 0.1, 0.34, metal, x, 0.52, 2.2, esp); box(0.18, 0.12, 0.18, black, x, 0.62, 2.2, esp); });
+  box(0.55, 0.1, 0.55, black, 0, 0.52, 1.3, esp);
+  box(0.6, 0.12, 0.35, black, -0.55, 0.53, 0.45, esp);
+  const espLbl = canvasTex(512, 128, (g, w, h) => {
+    g.fillStyle = 'rgba(0,0,0,0)'; g.clearRect(0, 0, w, h);
+    g.fillStyle = 'rgba(235,240,245,.9)'; g.font = '700 46px Rajdhani, sans-serif'; g.textAlign = 'center'; g.fillText('ESP32 · DEVKIT · 38P', w / 2, 60);
+    g.font = '600 28px Rajdhani, sans-serif'; g.fillStyle = 'rgba(235,240,245,.6)'; g.fillText('EN          BOOT', w / 2, 104);
+  });
+  const espTxt = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshBasicMaterial({ map: espLbl.tex, transparent: true, depthWrite: false }));
+  espTxt.rotation.x = -Math.PI / 2; espTxt.position.set(0, 0.473, 0.55); esp.add(espTxt);
+  const pwrLed = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 0.1), M(0xff2222, { emissive: 0xff1111, emissiveIntensity: 1.5 }));
+  pwrLed.position.set(0.7, 0.5, 1.75); esp.add(pwrLed);
+
+  /* resistencias */
+  const bandCols = [0x8b4513, 0x000000, 0xff8c00, 0xd4af37];
+  function resistor(x, z, along) {
+    const g = new THREE.Group(); g.position.set(x, T, z); if (along === 'z') g.rotation.y = Math.PI / 2; model.add(g);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.52, 16), M(0xe0c597, { roughness: 0.7 }));
+    body.rotation.z = Math.PI / 2; body.position.y = 0.24; g.add(body);
+    [-0.16, -0.08, 0, 0.16].forEach((bx, k) => {
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.045, 16), M(bandCols[k], { roughness: 0.6 }));
+      b.rotation.z = Math.PI / 2; b.position.set(bx, 0.24, 0); g.add(b);
+    });
+    const lead = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.92, 6), metal);
+    lead.rotation.z = Math.PI / 2; lead.position.y = 0.24; g.add(lead);
+    [-0.46, 0.46].forEach(lx => { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.25, 6), metal); l.position.set(lx, 0.12, 0); g.add(l); });
+  }
+  [[-1.55, -3.75, 'x'], [-1.55, -5.05, 'x'], [0.5, -5.7, 'x'], [0.75, -4.35, 'x'], [-1.75, 1.35, 'x'], [-2.65, -1.0, 'x'], [1.65, -3.55, 'z'], [1.45, -1.0, 'z'], [2.55, -1.3, 'z']]
+    .forEach(r => resistor(r[0], r[1], r[2]));
+
+  /* bornas (clemas) */
+  const pickables = [];
+  function terminal(xc, zc, rotY, chIndex, color) {
+    const g = new THREE.Group(); g.position.set(xc, T, zc); g.rotation.y = rotY; model.add(g);
+    const mat = M(color || 0x1f8a4c, { roughness: 0.42, emissive: 0x000000 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.95, 1.3), mat); body.position.y = 0.475; g.add(body);
+    box(0.55, 0.22, 1.28, mat, 0.28, 1.0, 0, g);
+    [-0.32, 0.32].forEach(z => {
+      const s = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 20), metal); s.position.set(0.28, 1.13, z); g.add(s);
+      box(0.32, 0.03, 0.05, M(0x30363d), 0.28, 1.175, z, g);
+      box(0.04, 0.34, 0.42, M(0x050608), -0.56, 0.45, z, g);
+    });
+    body.userData.ch = chIndex; pickables.push(body);
+    return { group: g, mat };
+  }
+  const term = [
+    terminal(-3.35, -4.6, 0, 0), terminal(-3.35, 0.4, 0, 1), terminal(3.35, -4.6, Math.PI, 2),
+    terminal(3.35, 0.4, Math.PI, -1, 0x2e4a3b)
+  ];
+  terminal(2.75, 5.45, Math.PI / 2, -1);
+
+  /* cables de salida */
+  function wirePts(xc, zc, side, z) {
+    const hx = xc + side * 0.6;
+    return [P(hx, z, T + 0.45), P(hx + side * 0.9, z, T + 0.42), P(hx + side * 1.9, z + 0.15, T - 0.1),
+            P(side * 6.3, z + 0.6, 0.55), P(side * 7.7, z + 1.6, 0.14), P(side * 10.5, z + 3.2, 0.13), P(side * 14.5, z + 4.8, 0.13)];
+  }
+  function tube(points, radius, mat) {
+    const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal');
+    const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 90, radius, 8, false), mat); model.add(m); return m;
+  }
+
+  /* pistas y partículas por canal */
+  const tracePts = [
+    [P(-1.27, 2.77), P(-1.95, 2.4), P(-1.95, -1.45), P(-0.75, -1.9), P(-0.75, -2.5), P(-1.6, -3.3), P(-2.7, -4.92), P(-3.35, -4.92, T + 0.45)],
+    [P(-1.27, 3.05), P(-2.3, 2.7), P(-2.3, -0.2), P(-0.75, -1.3), P(-0.75, -0.7), P(-1.7, 0.0), P(-2.7, 0.08), P(-3.35, 0.08, T + 0.45)],
+    [P(-1.27, 3.33), P(-1.62, 3.0), P(-1.62, 0.45), P(0.1, 0.05), P(0.75, -0.4), P(0.75, -1.9), P(0.75, -2.5), P(1.7, -3.3), P(2.7, -4.92), P(3.35, -4.92, T + 0.45)]
+  ];
+  const termPos = [[-3.35, -4.6, -1], [-3.35, 0.4, -1], [3.35, -4.6, 1]];
+  const ledPos = [[-2.5, -3.6], [-2.5, 1.45], [2.5, -3.6]];
+  const copper = M(0xc9a227, { metalness: 0.75, roughness: 0.35, emissive: 0x2a1e00, emissiveIntensity: 0.6 });
+  const chs = [];
+
+  function makeLabel() {
+    const L = canvasTex(512, 240, () => {});
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: L.tex, transparent: true, depthTest: false, depthWrite: false }));
+    spr.scale.set(3.0, 1.41, 1); spr.renderOrder = 10;
+    return { L, spr, last: '' };
+  }
+  function drawLabel(lab, d, val, n, fault, off, sel) {
+    const g = lab.L.ctx, W = 512, H = 240;
+    g.clearRect(0, 0, W, H);
+    roundRect(g, 10, 10, W - 20, H - 20, 30);
+    g.fillStyle = 'rgba(7,12,20,.84)'; g.fill();
+    g.lineWidth = sel ? 7 : 4; g.strokeStyle = fault ? '#f43f5e' : d.color; g.stroke();
+    g.textAlign = 'left'; g.fillStyle = fault ? '#fb7185' : d.color; g.font = '700 38px Rajdhani, sans-serif';
+    g.fillText(`AO${d.id} · ${d.j}`, 36, 64);
+    g.textAlign = 'right'; g.fillStyle = '#8a99ad'; g.font = '600 30px Rajdhani, sans-serif';
+    g.fillText(off ? 'OFF' : fault ? (fault === 'low' ? 'FALLA BAJA' : 'FALLA ALTA') : d.name.replace(/\s/g, ''), W - 36, 62);
+    g.textAlign = 'left'; g.fillStyle = fault ? '#fecdd3' : '#f1f5f9'; g.font = '700 98px "JetBrains Mono", monospace';
+    g.fillText(val, 30, 168);
+    const wv = g.measureText(val).width;
+    g.fillStyle = '#7b8aa0'; g.font = '700 46px Rajdhani, sans-serif'; g.fillText('V', 42 + wv, 166);
+    roundRect(g, 36, 190, W - 72, 14, 7); g.fillStyle = '#1a2536'; g.fill();
+    if (n > 0.002) { roundRect(g, 36, 190, Math.max(14, (W - 72) * n), 14, 7); g.fillStyle = fault ? '#f43f5e' : d.color; g.fill(); }
+    lab.L.tex.needsUpdate = true;
+  }
+
+  const N = 70;
+  CH.forEach((d, i) => {
+    const [xc, zc, side] = termPos[i];
+    const pcbPart = tracePts[i].slice(0, -1).map(p => new THREE.Vector3(p.x, T + 0.014, p.z));
+    tube(pcbPart, 0.03, copper);
+    const zs = zc - 0.32, zg = zc + 0.32;
+    const wireMat = M(new THREE.Color(d.color).multiplyScalar(0.55).getHex(), { roughness: 0.4, emissive: new THREE.Color(d.color), emissiveIntensity: 0.1 });
+    tube(wirePts(xc, zc, side, zs), 0.085, wireMat);
+    tube(wirePts(xc, zc, side, zg), 0.085, M(0x16181d, { roughness: 0.5 }));
+    const curve = new THREE.CatmullRomCurve3(tracePts[i].concat(wirePts(xc, zc, side, zs).slice(1)), false, 'centripetal');
+    const lut = curve.getSpacedPoints(400);
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(N * 3); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const pmat = new THREE.PointsMaterial({ size: 0.34, map: dotTex, color: new THREE.Color(d.color), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+    const pts = new THREE.Points(geo, pmat); pts.frustumCulled = false; model.add(pts);
+    const ledMat = M(0x222222, { emissive: new THREE.Color(d.color), emissiveIntensity: 0.1, roughness: 0.2 });
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.15, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2), ledMat);
+    led.position.set(ledPos[i][0], T, ledPos[i][1]); model.add(led);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: new THREE.Color(d.color), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+    glow.position.set(ledPos[i][0], T + 0.12, ledPos[i][1]); model.add(glow);
+    const lab = makeLabel(); lab.spr.position.set(xc * 0.97, T + 2.55, zc); lab.spr.userData.ch = i; model.add(lab.spr); pickables.push(lab.spr);
+    const ringMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(d.color), transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.18, 48), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.set(xc, T + 0.02, zc); model.add(ring);
+    chs.push({ d, lut, pos, geo, pmat, ledMat, glow, wireMat, lab, ringMat, ring, phase: Math.random(), labT: 0, base: new THREE.Color(d.color) });
+  });
+
+  /* alimentación J5 */
+  [[2.43, 0xdc2626], [3.07, 0x16181d]].forEach(([x, col]) => {
+    tube([P(x, 6.05, T + 0.45), P(x, 6.9, T + 0.4), P(x + 0.2, 7.7, 0.55), P(x + 0.8, 9.4, 0.13), P(x + 1.8, 13.5, 0.13)], 0.085, M(col, { roughness: 0.45 }));
+  });
+  const pwr = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), M(0x330000, { emissive: 0xff2d2d, emissiveIntensity: 1.6 }));
+  pwr.position.set(3.55, T, 4.4); model.add(pwr);
+  const pwrGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: 0xff3b3b, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+  pwrGlow.position.set(3.55, T + 0.1, 4.4); pwrGlow.scale.set(1.1, 1.1, 1); model.add(pwrGlow);
+
+  /* LED de estado BLE y ondas */
+  const bleMat = M(0x111827, { emissive: 0x3b82f6, emissiveIntensity: 0.3 });
+  const bleLed = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), bleMat);
+  bleLed.position.set(-2.1, T, 5.4); model.add(bleLed);
+  const bleGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: 0x60a5fa, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  bleGlow.position.set(-2.1, T + 0.1, 5.4); model.add(bleGlow);
+  const waves = [0, 1, 2].map(k => {
+    const m = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 64), new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+    m.rotation.x = -Math.PI / 2; m.position.set(0, T + 0.95, 0.45); model.add(m); return { m, k };
+  });
+
+  /* polvo ambiental */
+  const DN = 150, dpos = new Float32Array(DN * 3), dvel = new Float32Array(DN);
+  for (let k = 0; k < DN; k++) { dpos[k * 3] = (Math.random() - 0.5) * 26; dpos[k * 3 + 1] = Math.random() * 9; dpos[k * 3 + 2] = (Math.random() - 0.5) * 26; dvel[k] = 0.15 + Math.random() * 0.35; }
+  const dgeo = new THREE.BufferGeometry(); dgeo.setAttribute('position', new THREE.BufferAttribute(dpos, 3));
+  const dust = new THREE.Points(dgeo, new THREE.PointsMaterial({ size: 0.09, map: dotTex, color: 0x7dd3fc, transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending }));
+  dust.frustumCulled = false; scene.add(dust);
+
+  /* cámara orbital */
+  const orb = { theta: -0.55, phi: 0.98, zoom: 1, base: 18, vt: 0, vp: 0, intro: 0, idleT: 0 };
+  let lastInteract = -10, mode = S.mode, sel = 0;
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
+    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    const a = w / h; orb.base = clamp(18 + Math.max(0, 1.3 - a) * 15, 18, 34);
+  }
+  if ('ResizeObserver' in window) new ResizeObserver(resize).observe(stage); else window.addEventListener('resize', resize);
+  resize();
+
+  const ptrs = new Map(); let drag = null, pinch = 0;
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  const dist = () => { const p = [...ptrs.values()]; return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); };
+  function pickAt(cx, cy) {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObjects(pickables, false).find(h => h.object.userData.ch >= 0);
+    return hit ? hit.object.userData.ch : -1;
+  }
+  function interacted() { lastInteract = now() / 1000; $('#hint').classList.add('gone'); }
+  canvas.addEventListener('pointerdown', e => {
+    canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptrs.size === 1) drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: now(), moved: false };
+    else if (ptrs.size === 2) { pinch = dist(); if (drag) drag.moved = true; }
+    canvas.classList.add('grabbing'); interacted();
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!ptrs.has(e.pointerId)) {
+      if (e.pointerType === 'mouse') canvas.classList.toggle('pointer', pickAt(e.clientX, e.clientY) >= 0);
+      return;
+    }
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptrs.size === 2) { const dd = dist(); if (pinch) orb.zoom = clamp(orb.zoom * pinch / dd, 0.55, 1.7); pinch = dd; return; }
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    orb.theta -= dx * 0.0085; orb.phi = clamp(orb.phi - dy * 0.006, 0.34, 1.36);
+    orb.vt = -dx * 0.0085; orb.vp = -dy * 0.006;
+    drag.x = e.clientX; drag.y = e.clientY;
+    if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 7) drag.moved = true;
+    interacted();
+  });
+  const up = e => {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.delete(e.pointerId);
+    if (drag && ptrs.size === 0) {
+      if (!drag.moved && now() - drag.t < 450) { const ch = pickAt(e.clientX, e.clientY); if (ch >= 0) selectChannel(ch, true); }
+      drag = null;
+    }
+    if (ptrs.size < 2) pinch = 0;
+    if (ptrs.size === 0) canvas.classList.remove('grabbing');
+  };
+  canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('wheel', e => { e.preventDefault(); orb.zoom = clamp(orb.zoom * (1 + Math.sign(e.deltaY) * 0.08), 0.55, 1.7); interacted(); }, { passive: false });
+
+  const red = new THREE.Color('#f43f5e'), tmp = new THREE.Color();
+  const easeOut = x => 1 - Math.pow(1 - x, 3);
+
+  V3.select = i => { sel = i; chs.forEach(c => { c.lab.last = ''; }); };
+  V3.setMode = m => { mode = m; };
+  V3.redraw = () => chs.forEach(c => { c.lab.last = ''; });
+  V3.frame = (dt, t) => {
+    // cámara
+    orb.intro = Math.min(1, orb.intro + dt / 2.2);
+    const k = easeOut(orb.intro);
+    if (!drag) {
+      orb.theta += orb.vt; orb.phi = clamp(orb.phi + orb.vp, 0.34, 1.36); orb.vt *= 0.9; orb.vp *= 0.9;
+      if (t - lastInteract > 6) orb.theta += (-0.55 + 0.6 * Math.sin(t * 0.11) - orb.theta) * Math.min(1, dt * 0.4);
+    }
+    const r = orb.base * orb.zoom * (1 + (1 - k) * 0.9), th = orb.theta - (1 - k) * 1.4, ph = orb.phi - (1 - k) * 0.25;
+    camera.position.set(target.x + r * Math.sin(ph) * Math.sin(th), target.y + r * Math.cos(ph), target.z + r * Math.sin(ph) * Math.cos(th));
+    camera.lookAt(target);
+
+    // canales
+    chs.forEach((c, i) => {
+      const st = S.ch[i], d = c.d;
+      const n = clamp(st.out / d.gmax, 0, 1), fault = faultOf(i), off = !st.en, active = n > 0.003;
+      tmp.copy(fault ? red : c.base);
+      c.phase = (c.phase + dt * (active ? 0.03 + 0.2 * n : 0.004)) % 1;
+      for (let p = 0; p < N; p++) {
+        const f = ((p / N + c.phase) % 1) * 399, idx = Math.floor(f), fr = f - idx;
+        const a = c.lut[idx], b = c.lut[Math.min(idx + 1, 399)];
+        c.pos[p * 3] = a.x + (b.x - a.x) * fr;
+        c.pos[p * 3 + 1] = a.y + (b.y - a.y) * fr + Math.sin(t * 3 + p) * 0.02;
+        c.pos[p * 3 + 2] = a.z + (b.z - a.z) * fr;
+      }
+      c.geo.attributes.position.needsUpdate = true;
+      const op = active ? 0.4 + 0.6 * Math.min(1, n * 1.4) : 0;
+      c.pmat.opacity += (op - c.pmat.opacity) * Math.min(1, dt * 6);
+      c.pmat.color.copy(tmp);
+      const blink = fault ? (Math.sin(t * 14) > 0 ? 1 : 0.12) : 1;
+      c.ledMat.emissive.copy(tmp); c.ledMat.emissiveIntensity = (0.12 + 1.9 * n) * blink;
+      c.glow.material.color.copy(tmp); c.glow.material.opacity = (active ? 0.25 + 0.75 * n : 0) * blink;
+      const gs = 0.8 + 1.8 * n; c.glow.scale.set(gs, gs, 1);
+      c.wireMat.emissive.copy(tmp); c.wireMat.emissiveIntensity = 0.06 + 0.5 * n * (0.8 + 0.2 * Math.sin(t * 5 + i));
+      const isSel = sel === i;
+      c.ringMat.opacity = isSel ? 0.35 + 0.3 * Math.sin(t * 4) : 0;
+      c.ring.scale.setScalar(isSel ? 1 + 0.04 * Math.sin(t * 4) : 1);
+      term[i].mat.emissive.copy(c.base); term[i].mat.emissiveIntensity = isSel ? 0.18 + 0.12 * Math.sin(t * 4) : 0;
+      c.lab.spr.position.y = T + 2.55 + Math.sin(t * 1.6 + i * 1.7) * 0.08;
+      const s = isSel ? 1.08 : 1; c.lab.spr.scale.set(3.0 * s, 1.41 * s, 1);
+      const key = fmt(st.out, 2) + '|' + fault + '|' + off + '|' + isSel + '|' + Math.round(n * 60);
+      if (key !== c.lab.last && t - c.labT > 0.06) { c.lab.last = key; c.labT = t; drawLabel(c.lab, d, fmt(st.out, 2), n, fault, off, isSel); }
+    });
+
+    // estado de enlace
+    let col = 0x64748b, inten = 0.15 + 0.1 * Math.sin(t * 2), wavesOn = false;
+    if (mode === 'connected') { col = 0x3b82f6; inten = 1.4 + 0.4 * Math.sin(t * 3); wavesOn = true; }
+    else if (mode === 'demo') { col = 0xa78bfa; inten = 1.3 + 0.4 * Math.sin(t * 3); wavesOn = true; }
+    else if (mode === 'reconnecting' || mode === 'connecting') { col = 0xfbbf24; inten = Math.sin(t * 16) > 0 ? 1.6 : 0.1; }
+    else if (mode === 'lost') { col = 0xf43f5e; inten = Math.sin(t * 6) > 0 ? 1.4 : 0.1; }
+    bleMat.emissive.setHex(col); bleMat.emissiveIntensity = inten;
+    bleGlow.material.color.setHex(col); bleGlow.material.opacity = Math.min(1, inten * 0.45); bleGlow.scale.set(1.2, 1.2, 1);
+    waves.forEach(w => {
+      const p = ((t * 0.45 + w.k / 3) % 1);
+      w.m.scale.setScalar(1 + p * 7);
+      w.m.material.color.setHex(col);
+      w.m.material.opacity = wavesOn ? (1 - p) * 0.5 : Math.max(0, w.m.material.opacity - dt);
+    });
+    pwrGlow.material.opacity = 0.45 + 0.1 * Math.sin(t * 2.3);
+
+    // polvo
+    for (let p = 0; p < DN; p++) { dpos[p * 3 + 1] += dvel[p] * dt * 0.4; if (dpos[p * 3 + 1] > 9) dpos[p * 3 + 1] = 0; }
+    dgeo.attributes.position.needsUpdate = true;
+    dust.rotation.y += dt * 0.01;
+
+    renderer.render(scene, camera);
+  };
+  V3.ok = true;
+  V3.setMode(S.mode);
+}
+
+/* =====================================================================
+   Ciclo de animación
+   ===================================================================== */
+let lastT = now();
+function loop(tNow) {
+  const dt = Math.min(0.05, (tNow - lastT) / 1000); lastT = tNow;
+  const kf = 1 - Math.exp(-dt / TAU);
+  S.ch.forEach((c, i) => {
+    const tgt = outTarget(i);
+    c.out += (tgt - c.out) * kf;
+    if (Math.abs(tgt - c.out) < 0.0005) c.out = tgt;
+    updateGauge(i);
+  });
+  if (V3.ok) { try { V3.frame(dt, tNow / 1000); } catch (e) { V3.ok = false; console.error(e); $('#stage').classList.add('no3d'); } }
+  requestAnimationFrame(loop);
+}
+
+/* =====================================================================
+   Arranque
+   ===================================================================== */
+function init() {
+  buildCards();
+  buildCal();
+  $('#segDelay').innerHTML = DELAYS.map(n => `<button type="button" data-d="${n}">${n === 0 ? 'Inmediato' : n + ' s'}</button>`).join('');
+  $$('#segMode button').forEach(b => b.addEventListener('click', () => {
+    if (!canSend()) { toast('Conéctate para cambiar este ajuste en la ESP32', 'warn'); return; }
+    S.discMode = +b.dataset.m; renderSettings(); send(`M=${S.discMode}`, 'M');
+  }));
+  $$('#segDelay button').forEach(b => b.addEventListener('click', () => {
+    if (!canSend()) { toast('Conéctate para cambiar este ajuste en la ESP32', 'warn'); return; }
+    S.delay = +b.dataset.d; renderSettings(); send(`D=${S.delay}`, 'D');
+  }));
+  $('#wakeSw').addEventListener('change', e => {
+    S.wake = e.target.checked; store.set('wake', S.wake);
+    keepAwake(S.wake && canSend());
+    toast(S.wake ? 'La pantalla se mantendrá encendida mientras estés conectado' : 'La pantalla podrá apagarse', 'info');
+  });
+  $('#simDrop').addEventListener('click', simDrop);
+  $('#btnConn').addEventListener('click', () => {
+    if (S.mode === 'connected') disconnectBLE();
+    else if (S.mode === 'reconnecting' || S.mode === 'lost') cancelLink();
+    else if (S.mode === 'demo') { exitDemo(); connectBLE(); }
+    else connectBLE();
+  });
+  $('#btnDemo').addEventListener('click', () => { if (S.mode === 'demo') exitDemo(); else enterDemo(); });
+  $('#bannerBtn').addEventListener('click', () => { if (S.mode === 'demo' || (S.mode === 'reconnecting' && !device)) return; manualReconnect(); });
+  $('#estop').addEventListener('click', estop);
+  window.addEventListener('beforeunload', e => { if (S.mode === 'connected') { e.preventDefault(); e.returnValue = ''; } });
+
+  renderSettings();
+  setMode('idle');
+  showSupport();
+  if ('bluetooth' in navigator && navigator.bluetooth.getAvailability) {
+    navigator.bluetooth.getAvailability().then(a => { if (!a) toast('Enciende el Bluetooth de este dispositivo', 'warn', 4000); }).catch(() => {});
+  }
+  log('sys', 'Listo. Toca Conectar o prueba el modo Demo.');
+  try { init3D(); } catch (e) { console.error(e); $('#stage').classList.add('no3d'); }
+  selectChannel(0, false, true);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (V3.ok) V3.redraw(); });
+  requestAnimationFrame(loop);
+}
+init();
+})();
+</script>
+</body>
+</html>
